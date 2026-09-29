@@ -2,10 +2,66 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CONTROLLER</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <title>Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/controller.css">
+    <script src="/vendor/peerjs.min.js"></script>
 </head>
 <body>
-    <!-- THIS IS THE CONTROLLER PAGE -->
+
+    <!-- Screen 1: join -->
+    <main id="joinScreen" class="screen join">
+        <div class="logo"></div>
+        <h1>Join the game</h1>
+
+        <label>
+            Room code
+            <input id="roomInput" class="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="AB7KQ">
+        </label>
+        <label>
+            Your name
+            <input id="nameInput" maxlength="12" autocomplete="off" placeholder="Player">
+        </label>
+
+        <button id="joinBtn" class="primary">Join game</button>
+        <p id="status" role="status"></p>
+    </main>
+
+    <!-- Screen 2: controller -->
+    <main id="padScreen" class="screen padscreen" hidden>
+        <header class="topbar">
+            <div class="me">
+                <span class="avatar" id="meAvatar">P</span>
+                <span id="meName">Player</span>
+            </div>
+            <div class="room">
+                <span id="roomLabel">00000</span>
+                <span class="dot" id="dot"></span>
+            </div>
+        </header>
+
+        <section class="pad">
+            <div class="stick" id="stick" aria-label="Joystick">
+                <div class="knob" id="knob"></div>
+            </div>
+
+            <div class="buttons">
+                <button class="btn" data-id="Y" style="grid-area:y">Y</button>
+                <button class="btn" data-id="X" style="grid-area:x">X</button>
+                <button class="btn" data-id="B" style="grid-area:b">B</button>
+                <button class="btn" data-id="A" style="grid-area:a">A</button>
+            </div>
+        </section>
+
+        <div id="overlay" class="overlay" hidden>
+            <p id="overlayMsg">Disconnected from the game.</p>
+            <button id="retryBtn" class="primary">Rejoin</button>
+        </div>
+    </main>
+
+    <script type="module" src="/js/controller.js"></script>
 </body>
 </html>
