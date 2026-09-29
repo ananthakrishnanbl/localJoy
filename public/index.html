@@ -4,8 +4,51 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GAME CONSOLE</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/css/index.css">
+    <script src="/vendor/peerjs.min.js"></script>
+    <script>
+        if (window.innerWidth <= 768) {
+            window.location.href = "/controller.html";
+        }
+    </script>
 </head>
 <body>
-    <!-- THIS IS THE GAME WINDOW AS WELL AS THE DASHBOARD -->
+    <header class="navbar">
+        <div class="logo"></div>
+        <div class="nav-right">
+            <button class="chip room-chip" id="navCopy" title="Copy room code">
+                <i class="fa-solid fa-link"></i><span class="room-code">00000</span>
+            </button>
+            <button class="chip icon-chip" id="fullscreenBtn" title="Fullscreen">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+    </header>
+
+    <aside class="sidebar">
+        <h2>Players <span id="playerCount">0</span></h2>
+        <ul id="playerList"></ul>
+    </aside>
+
+    <main class="lobby">
+        <section class="connect">
+            <p class="connect-title">
+            <span class="highlight">Connect controllers</span>
+            Enter the code below or scan the QR code
+            </p>
+
+            <button class="room-id" id="roomCopy" title="Click to copy">
+            <i class="fa-solid fa-link"></i>
+            <span class="room-code">00000</span>
+            </button>
+            <span class="copied" id="copiedMsg">Code copied</span>
+
+            <p class="or"><span>or</span></p>
+
+            <div class="qr" id="qr"></div>
+        </section>
+    </main>
+    <script type="module" src="/js/console.js"></script>
 </body>
 </html>

@@ -1,0 +1,257 @@
+:root {
+  --bg: #0a0f0d;
+  --panel: #101a17;
+  --green: #123f36;
+  --green-light: #1c5c4e;
+  --accent: #ffd93b;
+  --text: #f2f5f4;
+  --muted: #8fa39d;
+  --nav-h: 56px;
+  --side-w: 260px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  padding-top: var(--nav-h); /* space for the fixed navbar */
+}
+
+button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Navbar ---------- */
+.navbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--nav-h);
+  background: #000;
+  border-bottom: 1px solid #1d2b27;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 10;
+
+  .logo {
+    height: 26px;
+    aspect-ratio: 4 / 1;
+    background: url("../assets/logo-name.png") center / contain no-repeat;
+  }
+  .nav-right { display: flex; gap: 10px; align-items: center; }
+
+  .chip {
+    height: 38px;
+    background: var(--green);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 14px;
+    transition: background .2s;
+    &:hover { background: var(--green-light); }
+  }
+  .room-chip i { color: var(--accent); font-size: 14px; }
+  .room-chip .room-code { font-weight: 800; letter-spacing: 2px; font-size: 15px; }
+  .icon-chip { width: 38px; padding: 0; }
+  .icon-chip i { font-size: 16px; }
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  position: fixed;
+  top: var(--nav-h);
+  left: 0;
+  bottom: 0;
+  width: var(--side-w);
+  background: var(--panel);
+  border-right: 1px solid #1d2b27;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;              /* the sidebar itself never scrolls */
+
+  h2 {
+    flex-shrink: 0;              /* heading stays put */
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 18px;
+    span { font-size: 14px; color: var(--muted); font-weight: 600; }
+  }
+
+  ul {
+    list-style: none;
+    display: grid;
+    align-content: start;        /* rows keep their size instead of stretching */
+    gap: 10px;
+    flex: 1;
+    min-height: 0;               /* lets the list shrink so it can scroll */
+    overflow-y: auto;
+    padding-right: 6px;          /* space between players and scrollbar */
+    margin-right: -6px;
+
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: var(--green-light) transparent;
+
+    /* Chrome, Edge, Safari */
+    &::-webkit-scrollbar { width: 6px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb {
+      background: var(--green-light);
+      border-radius: 10px;
+    }
+    &::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+  }
+
+  .player {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--green);
+    font-weight: 600;
+    animation: join .35s ease-out;
+  }
+  .player.empty {
+    background: transparent;
+    border: 1.5px dashed #2a3d37;
+    color: var(--muted);
+    font-weight: 400;
+    animation: none;
+  }
+  .avatar {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    color: #10201b;
+    background: #2a3d37;
+  }
+  .empty .avatar { color: var(--muted); }
+}
+
+
+/* ---------- Lobby ---------- */
+.lobby {
+  margin-left: var(--side-w);
+  height: calc(100vh - var(--nav-h));
+  display: flex;
+}
+
+.connect {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 40px 24px;
+  background: radial-gradient(ellipse at center, #2e4540, #0b0909 75%);
+
+  .connect-title {
+    text-align: center;
+    font-size: 18px;
+    color: var(--muted);
+    line-height: 1.5;
+    .highlight {
+      display: block;
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 800;
+    }
+  }
+
+  .room-id {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 28px;
+    background: var(--green);
+    border-radius: 14px;
+    transition: transform .15s;
+    &:hover { transform: scale(1.03); }
+    &::after { /* soft pulsing ring instead of the red flash */
+      content: "";
+      position: absolute;
+      inset: -6px;
+      border-radius: 18px;
+      border: 2px solid var(--accent);
+      opacity: 0;
+      animation: pulse 2.4s ease-out infinite;
+    }
+    i { color: var(--accent); font-size: 24px; }
+    .room-code { font-size: 38px; font-weight: 800; letter-spacing: 6px; }
+  }
+
+  .copied {
+    height: 16px;
+    margin-top: -12px;
+    font-size: 13px;
+    color: var(--accent);
+    opacity: 0;
+    transition: opacity .2s;
+    &.show { opacity: 1; }
+  }
+
+  .or {
+    width: 60%;
+    max-width: 260px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: var(--muted);
+    font-weight: 600;
+    &::before, &::after { content: ""; flex: 1; height: 1px; background: #3a4f49; }
+  }
+
+  .qr {
+    width: 210px;
+    height: 210px;
+    padding: 15px;
+    background: #fff;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    img, canvas { max-width: 100%; }
+  }
+}
+
+/* ---------- Animations ---------- */
+@keyframes pulse {
+  0%   { opacity: .7; transform: scale(.98); }
+  100% { opacity: 0;  transform: scale(1.08); }
+}
+@keyframes join {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  :root { --side-w: 0px; }
+  .sidebar {
+    position: static;
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid #1d2b27;
+    ul { grid-template-columns: repeat(2, 1fr); }
+  }
+  .lobby { margin: 0; height: auto; min-height: 70vh; }
+}

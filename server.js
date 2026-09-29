@@ -25,7 +25,8 @@ app.get('/qr.svg', async (req, res) => {
 
 // PeerJS browser library, served locally so no CDN is needed
 app.get('/vendor/peerjs.min.js', (req, res) =>
-  res.sendFile(path.join(__dirname, 'node_modules/peerjs/dist/peerjs.min.js')));
+  res.sendFile(path.join(__dirname, 'node_modules/peerjs/dist/peerjs.min.js')
+));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
