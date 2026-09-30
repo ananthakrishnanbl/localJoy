@@ -9,6 +9,18 @@ const joinBtn = $("joinBtn");
 const statusEl = $("status");
 const dot = $("dot");
 const overlay = $("overlay");
+const pad = $("pad");
+const panel = $("panel");
+const readyBtn = $("readyBtn");
+const hostBadge = $("hostBadge");
+const dualPad = $("dualPad");
+const hud = $("hud");
+const hpWrap = $("hpWrap");
+const hpFill = $("hpFill");
+const hudText = $("hudText");
+const downEl = $("down");
+const exitBtn = $("exitBtn");
+let isHost = false;
 
 let peer = null;
 let conn = null;
@@ -29,6 +41,7 @@ roomInput.addEventListener("input", () => {
 joinBtn.onclick = () => { enterFullscreen(); join(); };   // the tap is what lets the browser go fullscreen
 [roomInput, nameInput].forEach((el) => el.addEventListener("keydown", (e) => e.key === "Enter" && join()));
 $("retryBtn").onclick = () => location.reload();   // keeps ?room= in the URL
+readyBtn.onclick = () => { send({ type: "ready" }); navigator.vibrate?.(30); };   // host only
 
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
@@ -101,8 +114,48 @@ function onData(data) {
     clearTimeout(joinTimer);
     joinBtn.disabled = false;
     setStatus("This room is full.", true);
+  } else if (data.type === "state") {
+    applyState(data);
   } else if (data.type === "vibrate") {
     navigator.vibrate?.(data.ms || 50);   // the game can buzz a phone
+  } else if (data.type === "hud") {
+    showHud(data);
+  }
+}
+
+// The console tells us which screen it is on and whether we are the host.
+// Which pad each game controller type uses. Types not listed here get the joystick + buttons pad.
+const PADS = { dual: dualPad };
+let currentPad = null;
+
+function applyState({ screen, host, controller }) {
+  if (host && !isHost) navigator.vibrate?.([40, 60, 40]);   // you just became the host
+  isHost = !!host;
+  hostBadge.hidden = !isHost;
+
+  const inGame = screen === "game";
+  const activePad = inGame ? PADS[controller] || pad : screen === "select" && isHost ? pad : null;
+  if (activePad !== currentPad) releaseAll();
+  currentPad = activePad;
+  pad.hidden = activePad !== pad;
+  dualPad.hidden = activePad !== dualPad;
+  panel.hidden = !!activePad;
+  readyBtn.hidden = !(isHost && screen === "lobby");
+
+  exitBtn.hidden = !(isHost && inGame);
+  resetExit();
+  if (!inGame) hud.hidden = true;
+
+  const set = (icon, title, text) => {
+    $("panelIcon").textContent = icon;
+    $("panelTitle").textContent = title;
+    $("panelText").textContent = text;
+  };
+  if (screen === "lobby") {
+    if (isHost) set("👑", "You're the host!", "When everyone has joined, tap Ready.");
+    else set("🎮", "You're in!", "Waiting for the host to get ready…");
+  } else if (screen === "select" && !isHost) {
+    set("🕹️", "Host is choosing", "Look at the big screen.");
   }
 }
 
@@ -128,9 +181,9 @@ function send(msg) {
 
 const turned = matchMedia("(orientation: portrait)");
 
-function setupStick() {
-  const stick = $("stick");
-  const knob = $("knob");
+// Turns a .stick dish into a joystick. emit(x, y) gets -1..1 on each axis (y: -1 up, 1 down).
+function makeStick(stick, emit) {
+  const knob = stick.querySelector(".knob");
   let pointerId = null;
   let last = "";
   let lastSent = 0;
@@ -141,7 +194,7 @@ function setupStick() {
     if (key === last || (!force && now - lastSent < 25)) return;   // ~40 updates per second max
     last = key;
     lastSent = now;
-    send({ type: "move", x, y });   // x: -1 left to 1 right, y: -1 up to 1 down
+    emit(x, y);
   }
 
   function update(e) {
@@ -212,6 +265,38 @@ function releaseAll() {
   releasers.forEach((fn) => fn());
 }
 
+/* ---------------- Game HUD + exit ---------------- */
+
+// { hp?: 0-100, text?: string, down?: bool } sent by the game
+function showHud({ hp, text, down }) {
+  hud.hidden = false;
+  hpWrap.hidden = typeof hp !== "number";
+  if (typeof hp === "number") {
+    hpFill.style.width = `${hp}%`;
+    hpFill.className = hp > 50 ? "" : hp > 25 ? "mid" : "low";
+  }
+  hudText.textContent = text || "";
+  downEl.hidden = !down;
+}
+
+// Host only. Two taps, so a thumb can't end the game by accident.
+let exitTimer = null;
+function resetExit() {
+  clearTimeout(exitTimer);
+  exitBtn.classList.remove("sure");
+  exitBtn.textContent = "Exit";
+}
+exitBtn.onclick = () => {
+  if (exitBtn.classList.contains("sure")) {
+    resetExit();
+    send({ type: "exit" });
+  } else {
+    exitBtn.classList.add("sure");
+    exitBtn.textContent = "Sure?";
+    exitTimer = setTimeout(resetExit, 2500);
+  }
+};
+
 /* ---------------- Fullscreen + landscape ---------------- */
 
 const fsBtn = $("fsBtn");
@@ -247,5 +332,12 @@ document.addEventListener("visibilitychange", () => {
 document.addEventListener("touchmove", (e) => { if (inGame) e.preventDefault(); }, { passive: false });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-setupStick();
+// Menu pad: one stick, sends "move"
+makeStick($("stick"), (x, y) => send({ type: "move", x, y }));
+
+// Twin-stick pad: left moves, right aims. Both go out together as "dual".
+const dual = { mx: 0, my: 0, ax: 0, ay: 0 };
+makeStick($("moveStick"), (x, y) => { dual.mx = x; dual.my = y; send({ type: "dual", ...dual }); });
+makeStick($("aimStick"),  (x, y) => { dual.ax = x; dual.ay = y; send({ type: "dual", ...dual }); });
+
 setupButtons();
