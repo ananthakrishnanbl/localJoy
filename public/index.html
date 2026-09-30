@@ -33,7 +33,7 @@
         <ul id="playerList"></ul>
     </aside>
 
-    <main class="lobby">
+    <main class="lobby" id="lobbyScreen">
         <section class="connect">
             <p class="connect-title">
                 <span class="highlight">Connect controllers</span>
@@ -48,8 +48,47 @@
             <p class="or"><span>or</span></p>
 
             <div class="qr" id="qr"></div>
+
+            <p class="host-hint" id="hostHint" role="status"></p>
         </section>
     </main>
+
+    <!-- Select game page (shown after the host taps Ready) -->
+    <main class="select" id="selectScreen" hidden>
+        <section class="feature" id="feature">
+            <div class="info">
+                <h1 id="fTitle"></h1>
+                <p class="tagline" id="fTagline"></p>
+                <div class="meta">
+                    <span class="stars" id="fStars"></span>
+                    <span class="pill" id="fPlayers"></span>
+                    <span class="pill" id="fControls"></span>
+                </div>
+                <p class="desc" id="fDesc"></p>
+                <div class="meta" id="fTags"></div>
+                <p class="warn" id="fWarn" role="status"></p>
+            </div>
+            <div class="art" id="fArt"></div>
+        </section>
+
+        <section class="shelf">
+            <h2>All games</h2>
+            <div class="row" id="gameRow"></div>
+        </section>
+
+        <div class="hintbar">
+            <span><i class="key stick">✥</i> Move the joystick to browse</span>
+            <span>Click <i class="key a">A</i> to select</span>
+            <span><i class="key b">B</i> Back</span>
+            <span id="whoHint"></span>
+        </div>
+    </main>
+
+    <!-- Game screen: console.js loads the chosen game module into #gameRoot -->
+    <main class="game" id="gameScreen" hidden>
+        <div id="gameRoot"></div>
+    </main>
     <script type="module" src="/js/console.js"></script>
+    <script type="module" src="/js/select.js"></script>
 </body>
 </html>

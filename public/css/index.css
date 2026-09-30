@@ -28,6 +28,7 @@ body {
     radial-gradient(circle at 92% 82%, #3ecf6e44 0 44px, transparent 45px),
     radial-gradient(circle at 70% 10%, #ff5a5f33 0 20px, transparent 21px);
 }
+[hidden] { display: none !important; }
 h1, h2 { font-family: 'Baloo 2', 'Fredoka', sans-serif; font-weight: 800; }
 button { font: inherit; color: inherit; border: 0; cursor: pointer; background: none; }
 :focus-visible { outline: 4px dashed var(--blue); outline-offset: 3px; }
@@ -140,7 +141,8 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
     font-weight: 600;
     font-size: 18px;
     &.fresh { animation: pop .6s cubic-bezier(.3, 1.8, .5, 1) both; }
-    span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .crown { margin-left: auto; font-size: 20px; }
   }
   .avatar {
     flex-shrink: 0;
@@ -263,7 +265,171 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
   }
 }
 
+/* ---------- Host hint (lobby) ---------- */
+.host-hint { max-width: 420px; min-height: 22px; text-align: center; font-weight: 600; font-size: 16px; opacity: .85; }
+
+/* ---------- Select-game page ---------- */
+.select {
+  margin-left: calc(var(--side-w) + var(--gap) * 2);
+  margin-right: var(--gap);
+  height: calc(100vh - var(--nav-h));
+  padding-bottom: calc(var(--gap) + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .feature {
+    --c: var(--blue);
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    background: var(--paper);
+    border: 6px solid var(--ink);
+    border-radius: 36px;
+    box-shadow: 0 10px 0 var(--shadow);
+    overflow: hidden;
+    &.swap .info, &.swap .art { animation: pop-in .35s ease both; }
+  }
+
+  .info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: clamp(18px, 3vh, 30px);
+    min-height: 0;
+    overflow: hidden;
+    h1 { font-size: clamp(30px, 5.2vh, 48px); line-height: 1.05; }
+    .tagline { font-weight: 700; font-size: 18px; opacity: .8; }
+    .desc { font-size: 18px; line-height: 1.4; font-weight: 500; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .stars { color: #e5a800; font-size: 22px; letter-spacing: 2px; font-weight: 700; margin-right: 4px; }
+    .pill {
+      padding: 4px 14px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 15px;
+      background: color-mix(in srgb, var(--c) 25%, var(--paper));
+    }
+    .warn {
+      min-height: 26px;
+      font-weight: 700;
+      color: #e0383e;
+      &:empty { display: none; }
+    }
+  }
+
+  .art {
+    position: relative;
+    display: grid;
+    place-items: center;
+    background: var(--c);
+    min-height: 0;
+    .emoji { font-size: 120px; }
+    img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  }
+
+  .shelf {
+    flex-shrink: 0;
+    h2 { font-size: 22px; margin: 0 8px; }
+  }
+  .row {
+    display: flex;
+    gap: 18px;
+    overflow-x: hidden;
+    padding: 18px 14px 20px;
+  }
+  .gcard {
+    --c: var(--blue);
+    position: relative;
+    flex: 0 0 auto;
+    width: clamp(110px, 11vw, 150px);
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 28px;
+    background: var(--c);
+    overflow: hidden;
+    box-shadow: 0 8px 0 color-mix(in srgb, var(--c) 68%, #1a1030);
+    transition: transform .18s cubic-bezier(.3, 1.8, .5, 1), box-shadow .18s;
+    .emoji { font-size: 52px; }
+    img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .badge, .label {
+      position: absolute;
+      font-weight: 700;
+      font-size: 13px;
+      color: #fff;
+      background: rgba(59, 47, 74, .75);
+      border-radius: 999px;
+      padding: 2px 10px;
+    }
+    .badge { top: 8px; right: 8px; }
+    .label { left: 8px; right: 8px; bottom: 8px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    &.focus { transform: translateY(-8px) scale(1.12); box-shadow: 0 0 0 6px var(--ink), 0 16px 0 var(--shadow); z-index: 1; }
+    &.locked img, &.locked .emoji { filter: grayscale(.85); }
+    &.shake { animation: shake .4s; }
+  }
+
+  .hintbar {
+    flex-shrink: 0;
+    align-self: center;
+    display: flex;
+    gap: 26px;
+    align-items: center;
+    padding: 8px 22px;
+    background: var(--paper);
+    border-radius: 999px;
+    box-shadow: 0 5px 0 var(--shadow);
+    font-weight: 700;
+    font-size: 17px;
+    #whoHint:empty { display: none; }
+    .key {
+      --k: var(--grn);
+      display: inline-grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      margin: 0 4px;
+      border-radius: 50%;
+      font-style: normal;
+      font-family: 'Baloo 2', sans-serif;
+      font-weight: 800;
+      color: #fff;
+      background: var(--k);
+      box-shadow: 0 3px 0 color-mix(in srgb, var(--k) 68%, #1a1030);
+      vertical-align: middle;
+    }
+    .key.b { --k: var(--red); }
+    .key.stick { --k: var(--blue); }
+  }
+}
+
+/* ---------- Game screen ---------- */
+.game {
+  margin-left: calc(var(--side-w) + var(--gap) * 2);
+  margin-right: var(--gap);
+  height: calc(100vh - var(--nav-h));
+  padding-bottom: calc(var(--gap) + 8px);
+
+  #gameRoot {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+  }
+}
+
 /* ---------- Animations ---------- */
+@keyframes pop-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes shake {
+  0%, 100% { transform: translateY(-8px) scale(1.12); }
+  25%      { transform: translate(-8px, -8px) scale(1.12); }
+  75%      { transform: translate(8px, -8px) scale(1.12); }
+}
 @keyframes pop {
   0%   { transform: scale(0) rotate(-40deg); }
   100% { transform: scale(1) rotate(var(--r, 0deg)); }
@@ -278,4 +444,6 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
   body { overflow: auto; }
   .sidebar { position: static; width: auto; margin: 0 var(--gap) 20px; ul { grid-template-columns: repeat(2, 1fr); } }
   .lobby { margin: 0 var(--gap); height: auto; }
+  .game { margin: 0 var(--gap); }
+  .select { margin: 0 var(--gap); height: auto; .feature { grid-template-columns: 1fr; } .art { min-height: 200px; } }
 }

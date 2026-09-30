@@ -1,0 +1,117 @@
+// Everything the lobby and the "select game" page need to know about each game.
+// To add a game: append one object to GAMES and drop its images into /assets/games/.
+// The game code itself lives in /js/game/<id>/ and is loaded later using `entry`.
+
+export const CONTROLLERS = {
+  pad:    "Joystick + buttons",
+  tilt:   "Tilt your phone",
+  choice: "Multiple choice",
+  hand:   "Private hand of cards",
+};
+
+export const GAMES = [
+//   {
+//     id: "sky-hopper",
+//     title: "Sky Hopper",
+//     tagline: "Jump, bounce, stay above the clouds",
+//     description:
+//       "A bouncy platform race. Hop across floating islands, stomp your friends and grab every star before the tide of clouds catches up.",
+//     cover:  "/assets/games/sky-hopper-cover.svg",    // square card image
+//     banner: "/assets/games/sky-hopper-banner.svg",   // big image on the detail panel
+//     emoji: "🐸",
+//     color: "#3b8bff",
+//     minPlayers: 1,
+//     maxPlayers: 4,
+//     rating: 4.5,
+//     tags: ["Platformer", "Party"],
+//     controller: "pad",
+//     entry: "/js/game/sky-hopper/main.js",
+//   },
+//   {
+//     id: "bumper-blitz",
+//     title: "Bumper Blitz",
+//     tagline: "Last car on the arena wins",
+//     description:
+//       "Tiny cars, huge bumpers, a shrinking arena. Steer with the joystick, boost with A and shove everybody else off the edge.",
+//     cover:  "/assets/games/bumper-blitz-cover.svg",
+//     banner: "/assets/games/bumper-blitz-banner.svg",
+//     emoji: "🚗",
+//     color: "#ff5a5f",
+//     minPlayers: 2,
+//     maxPlayers: 8,
+//     rating: 5,
+//     tags: ["Arena", "Chaos"],
+//     controller: "pad",
+//     entry: "/js/game/bumper-blitz/main.js",
+//   },
+//   {
+//     id: "tilt-maze",
+//     title: "Tilt Maze",
+//     tagline: "Roll the ball, tilt the world",
+//     description:
+//       "Your phone becomes the maze. Tilt it to roll your marble to the exit before anyone else, and avoid the holes.",
+//     cover:  "/assets/games/tilt-maze-cover.svg",
+//     banner: "/assets/games/tilt-maze-banner.svg",
+//     emoji: "🌀",
+//     color: "#3ecf6e",
+//     minPlayers: 1,
+//     maxPlayers: 6,
+//     rating: 4,
+//     tags: ["Racing", "Motion"],
+//     controller: "tilt",
+//     entry: "/js/game/tilt-maze/main.js",
+//   },
+//   {
+//     id: "quiz-blast",
+//     title: "Quiz Blast",
+//     tagline: "Fast fingers, faster brains",
+//     description:
+//       "Questions appear on the big screen, answers on your phone. The quicker you tap the right one, the more points you blast.",
+//     cover:  "/assets/games/quiz-blast-cover.svg",
+//     banner: "/assets/games/quiz-blast-banner.svg",
+//     emoji: "❓",
+//     color: "#ffcf33",
+//     minPlayers: 2,
+//     maxPlayers: 10,
+//     rating: 4.5,
+//     tags: ["Trivia", "Party"],
+//     controller: "choice",
+//     entry: "/js/game/quiz-blast/main.js",
+//   },
+//   {
+//     id: "card-sharks",
+//     title: "Card Sharks",
+//     tagline: "Bluff, trade and sink your rivals",
+//     description:
+//       "Everyone gets a secret hand on their phone. Play, bluff and trade cards until only one shark is left swimming.",
+//     cover:  "/assets/games/card-sharks-cover.svg",
+//     banner: "/assets/games/card-sharks-banner.svg",
+//     emoji: "🦈",
+//     color: "#a78bfa",
+//     minPlayers: 2,
+//     maxPlayers: 6,
+//     rating: 4,
+//     tags: ["Cards", "Bluffing"],
+//     controller: "hand",
+//     entry: "/js/game/card-sharks/main.js",
+//   },
+    {
+        id: "shooter",
+        title: "Blast Arena",
+        tagline: "Top-down arena shootout",
+        description:
+            "Left thumb moves, right thumb aims and fires. Dodge around the walls, blast your friends and be the first to ten kills.",
+        cover:  "/assets/games/shooter-cover.svg",
+        banner: "/assets/games/shooter-banner.svg",
+        emoji: "🔫",
+        color: "#ff6b57",
+        minPlayers: 2,
+        maxPlayers: 10,
+        rating: 4.5,
+        tags: ["Shooter", "Arena"],
+        controller: "dual",
+        entry: "/js/game/shooter/main.js",
+    },
+];
+
+export const getGame = (id) => GAMES.find((g) => g.id === id);

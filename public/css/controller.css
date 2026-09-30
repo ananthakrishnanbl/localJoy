@@ -308,6 +308,107 @@ button { cursor: pointer; }
   }
 }
 
+/* Waiting / host panel */
+.host-badge { font-size: 20px; }
+.panel {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding-bottom: 10px;
+}
+.panel-card {
+  width: min(100%, 420px);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: clamp(10px, 3vmin, 22px);
+  text-align: center;
+  background: var(--paper);
+  border: 6px solid var(--ink);
+  border-radius: 36px;
+  box-shadow: 0 10px 0 var(--shadow);
+
+  .panel-icon { font-size: clamp(32px, 9vmin, 56px); line-height: 1; }
+  h2 { font-family: 'Baloo 2', sans-serif; font-size: clamp(22px, 5vmin, 30px); line-height: 1.1; }
+  p { font-weight: 600; font-size: 16px; opacity: .85; }
+  .toy { width: 100%; font-size: 28px; animation: bob 1.4s ease-in-out infinite; }
+}
+@keyframes bob { 50% { transform: translateY(-4px) scale(1.03); } }
+
+/* ---------- Game extras: HUD, exit button, twin-stick pad ---------- */
+.pad { position: relative; }
+
+.topbar {
+  .hud {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 6px;
+  }
+  .hp {
+    flex: 1 1 0;
+    max-width: 180px;
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--ink) 18%, transparent);
+    i { display: block; width: 100%; height: 100%; background: var(--grn); transition: width .15s, background .15s; }
+    i.mid { background: var(--yel); }
+    i.low { background: var(--red); }
+  }
+  #hudText { white-space: nowrap; font-size: .9em; }
+  .exit {
+    flex-shrink: 0;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    background: var(--red);
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+    box-shadow: 0 4px 0 #b8383c;
+    &:active { transform: translateY(3px); box-shadow: 0 1px 0 #b8383c; }
+    &.sure { background: var(--yel); color: #3b2f4a; box-shadow: 0 4px 0 #c99a0a; }
+  }
+}
+
+.stick[data-label]::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 9%;
+  text-align: center;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: calc(var(--size) / 12);
+  letter-spacing: 1px;
+  opacity: .4;
+  pointer-events: none;
+}
+.stick.aim .knob {
+  background: var(--red);
+  box-shadow: 0 7px 0 color-mix(in srgb, var(--red) 68%, #1a1030), 0 12px 14px var(--shadow);
+}
+
+/* "Respawning..." cover. Sticks stay live underneath, so you keep moving when you come back. */
+.down {
+  position: absolute;
+  inset: 0 0 10px;
+  display: grid;
+  place-items: center;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  font-family: 'Baloo 2', sans-serif;
+  font-size: clamp(24px, 6dvh, 40px);
+  font-weight: 800;
+  pointer-events: none;
+}
+
 /* Disconnected overlay */
 .overlay {
   position: fixed;
@@ -325,5 +426,5 @@ button { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  * { transition: none !important; animation: none !important; }
 }

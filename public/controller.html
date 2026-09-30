@@ -39,15 +39,32 @@
             <div class="me">
                 <span class="avatar" id="meAvatar">P</span>
                 <span id="meName">Player</span>
+                <span class="host-badge" id="hostBadge" title="Host" hidden>👑</span>
+            </div>
+            <!-- Game status (health, kills...). Shown only when a game sends it -->
+            <div class="hud" id="hud" hidden>
+                <div class="hp" id="hpWrap"><i id="hpFill"></i></div>
+                <span id="hudText"></span>
             </div>
             <div class="room">
                 <span id="roomLabel">00000</span>
                 <span class="dot" id="dot" title="Connection"></span>
             </div>
+            <button class="exit" id="exitBtn" hidden>Exit</button>
             <button class="fs" id="fsBtn" aria-label="Fullscreen" title="Fullscreen" hidden>⛶</button>
         </header>
 
-        <section class="pad">
+        <!-- Shown instead of the pad while there is nothing to control -->
+        <section class="panel" id="panel">
+            <div class="panel-card">
+                <div class="panel-icon" id="panelIcon">🎮</div>
+                <h2 id="panelTitle">You're in!</h2>
+                <p id="panelText">Waiting for the host…</p>
+                <button id="readyBtn" class="toy primary" hidden>Ready!</button>
+            </div>
+        </section>
+
+        <section class="pad" id="pad" hidden>
             <div class="stick" id="stick" aria-label="Joystick">
                 <div class="knob" id="knob"></div>
             </div>
@@ -58,6 +75,17 @@
                 <button class="btn" data-id="B" style="grid-area:b">B</button>
                 <button class="btn" data-id="A" style="grid-area:a">A</button>
             </div>
+        </section>
+
+        <!-- Twin-stick pad: left stick moves, right stick aims and fires (controller type "dual") -->
+        <section class="pad" id="dualPad" hidden>
+            <div class="stick" id="moveStick" data-label="MOVE" aria-label="Move">
+                <div class="knob"></div>
+            </div>
+            <div class="stick aim" id="aimStick" data-label="AIM + FIRE" aria-label="Aim and fire">
+                <div class="knob"></div>
+            </div>
+            <div class="down" id="down" hidden>Respawning…</div>
         </section>
 
         <div id="overlay" class="overlay" hidden>
