@@ -1,15 +1,19 @@
 import { PREFIX, peerOptions } from "/js/common.js";
 
 const MAX_PLAYERS = 10;
-const COLORS = ["#ffd93b", "#4dd4a8", "#ff7a59", "#6ea8ff"];
+const COLORS = ["#ff5a5f", "#3b8bff", "#3ecf6e", "#ffcf33", "#ff8fc2", "#ff9f43", "#a78bfa", "#2dd4bf", "#a3e635", "#38bdf8"];
+const ANIMALS = ["🐻", "🐰", "🦊", "🐸", "🐼", "🦁", "🐯", "🐵", "🐙", "🦄"];
+const shown = new Set();      // slots already drawn, so only newcomers pop in
 
 const players = new Map();   // conn.peer -> { conn, slot, name }
 let roomCode = "";
 let peer = null;
+let playerCount=0;
 
 const listEl = document.getElementById("playerList");
 const countEl = document.getElementById("playerCount");
 const qrEl = document.getElementById("qr");
+const blocksEl = document.getElementById("blocks");
 const copiedMsg = document.getElementById("copiedMsg");
 
 /* ---------------- Room + PeerJS ---------------- */
@@ -37,7 +41,18 @@ function makePeer() {
 
 /* ---------------- Room code + QR ---------------- */
 
+function drawBlocks(code) {
+  blocksEl.replaceChildren(...[...code].map((ch, i) => {
+    const b = document.createElement("span");
+    b.className = "blk pop";
+    b.style.animationDelay = `${i * 0.08}s`;
+    b.textContent = ch;
+    return b;
+  }));
+}
+
 function showRoom() {
+  drawBlocks(roomCode);
   document.querySelectorAll(".room-code").forEach((el) => (el.textContent = roomCode));
 
   // The phone scans this and lands on controller.html with the room code
@@ -67,7 +82,7 @@ function handleConnection(conn) {
     }
     const player = { conn, slot, name: `Player ${slot + 1}` };
     players.set(conn.peer, player);
-    conn.send({ type: "welcome", slot, color: COLORS[slot], name: player.name });
+    conn.send({ type: "welcome", slot, color: COLORS[slot], animal: ANIMALS[slot], name: player.name });
     renderPlayers();
   });
 
@@ -96,24 +111,23 @@ function removePlayer(conn) {
 
 function renderPlayers() {
   listEl.replaceChildren();
-  for (let i = 0; i < MAX_PLAYERS; i++) {
-    const player = [...players.values()].find((p) => p.slot === i);
+  const joined = [...players.values()].sort((a, b) => a.slot - b.slot);
+  const live = new Set(joined.map((p) => p.slot));
+  [...shown].forEach((slot) => live.has(slot) || shown.delete(slot));
 
+  for (const player of joined) {
     const li = document.createElement("li");
-    li.className = player ? "player" : "player empty";
+    li.className = "player";
+    li.style.setProperty("--c", COLORS[player.slot]);
+    if (!shown.has(player.slot)) li.classList.add("fresh");
+    shown.add(player.slot);
 
     const avatar = document.createElement("span");
     avatar.className = "avatar";
+    avatar.textContent = ANIMALS[player.slot];
     const label = document.createElement("span");
+    label.textContent = player.name;   // textContent, so names can't inject HTML
 
-    if (player) {
-      avatar.style.background = COLORS[i];
-      avatar.textContent = player.name[0].toUpperCase();
-      label.textContent = player.name;   // textContent, so names can't inject HTML
-    } else {
-      avatar.textContent = "?";
-      label.textContent = "Waiting...";
-    }
     li.append(avatar, label);
     listEl.appendChild(li);
   }
@@ -145,11 +159,10 @@ fsBtn.onclick = () => {
   else document.exitFullscreen();
 };
 document.addEventListener("fullscreenchange", () => {
-  fsBtn.querySelector("i").className = document.fullscreenElement
-    ? "fa-solid fa-compress"
-    : "fa-solid fa-expand";
+  document.getElementById("fsIcon").textContent = document.fullscreenElement ? "🗗" : "⛶";
 });
 
 /* ---------------- Start ---------------- */
+drawBlocks("·····");
 renderPlayers();
 makePeer();

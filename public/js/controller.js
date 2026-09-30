@@ -19,7 +19,6 @@ let wakeLock = null;
 const releasers = [];   // functions that let go of every input (used when the tab is hidden)
 
 /* ---------------- Join form ---------------- */
-
 const params = new URLSearchParams(location.search);
 roomInput.value = (params.get("room") || "").toUpperCase().slice(0, 5);
 try { nameInput.value = localStorage.getItem("lj-name") || ""; } catch {}
@@ -27,7 +26,7 @@ try { nameInput.value = localStorage.getItem("lj-name") || ""; } catch {}
 roomInput.addEventListener("input", () => {
   roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z2-9]/g, "");
 });
-joinBtn.onclick = join;
+joinBtn.onclick = () => { enterFullscreen(); join(); };   // the tap is what lets the browser go fullscreen
 [roomInput, nameInput].forEach((el) => el.addEventListener("keydown", (e) => e.key === "Enter" && join()));
 $("retryBtn").onclick = () => location.reload();   // keeps ?room= in the URL
 
@@ -90,12 +89,13 @@ function onData(data) {
     inGame = true;
     document.documentElement.style.setProperty("--player", data.color);
     $("meName").textContent = data.name;
-    $("meAvatar").textContent = data.name[0].toUpperCase();
+    $("meAvatar").textContent = data.animal || data.name[0].toUpperCase();
     $("roomLabel").textContent = roomInput.value.toUpperCase();
     dot.classList.add("on");
     joinScreen.hidden = true;
     padScreen.hidden = false;
     keepScreenOn();
+    lockLandscape();
   } else if (data.type === "full") {
     rejected = true;
     clearTimeout(joinTimer);
@@ -126,6 +126,8 @@ function send(msg) {
 
 /* ---------------- Joystick ---------------- */
 
+const turned = matchMedia("(orientation: portrait)");
+
 function setupStick() {
   const stick = $("stick");
   const knob = $("knob");
@@ -147,6 +149,7 @@ function setupStick() {
     const max = (rect.width - knob.offsetWidth) / 2;
     let dx = e.clientX - (rect.left + rect.width / 2);
     let dy = e.clientY - (rect.top + rect.height / 2);
+    if (turned.matches) [dx, dy] = [dy, -dx];   // pad is rotated 90° when the phone is upright
     const dist = Math.hypot(dx, dy);
     if (dist > max) { dx = (dx / dist) * max; dy = (dy / dist) * max; }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -167,6 +170,7 @@ function setupStick() {
 
   stick.addEventListener("pointerdown", (e) => {
     if (pointerId !== null) return;
+    e.preventDefault();
     pointerId = e.pointerId;
     stick.setPointerCapture(pointerId);
     knob.classList.add("active");
@@ -176,6 +180,7 @@ function setupStick() {
   stick.addEventListener("pointermove", (e) => e.pointerId === pointerId && update(e));
   stick.addEventListener("pointerup", (e) => e.pointerId === pointerId && release());
   stick.addEventListener("pointercancel", (e) => e.pointerId === pointerId && release());
+  stick.addEventListener("lostpointercapture", (e) => e.pointerId === pointerId && release());
   releasers.push(release);
 }
 
@@ -207,6 +212,29 @@ function releaseAll() {
   releasers.forEach((fn) => fn());
 }
 
+/* ---------------- Fullscreen + landscape ---------------- */
+
+const fsBtn = $("fsBtn");
+const canFullscreen = !!document.documentElement.requestFullscreen;
+fsBtn.hidden = !canFullscreen;
+
+function enterFullscreen() {
+  if (canFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+}
+async function lockLandscape() {
+  // Only works while fullscreen on Android. Elsewhere the CSS turns the pad sideways instead.
+  try { await screen.orientation.lock("landscape"); } catch {}
+}
+fsBtn.onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else { enterFullscreen(); lockLandscape(); }
+};
+document.addEventListener("fullscreenchange", () => {
+  fsBtn.textContent = document.fullscreenElement ? "🗗" : "⛶";
+  if (document.fullscreenElement) { if (inGame) lockLandscape(); }
+  else { try { screen.orientation.unlock(); } catch {} }
+});
+
 /* ---------------- Extras ---------------- */
 
 async function keepScreenOn() {
@@ -216,6 +244,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) releaseAll();
   else if (inGame) keepScreenOn();
 });
+document.addEventListener("touchmove", (e) => { if (inGame) e.preventDefault(); }, { passive: false });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 setupStick();

@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GAME CONSOLE</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>localJoy – Game console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/index.css">
     <script src="/vendor/peerjs.min.js"></script>
     <script>
@@ -15,13 +17,13 @@
 </head>
 <body>
     <header class="navbar">
-        <div class="logo"></div>
+        <a class="logo" href="/" aria-label="localJoy"><i>l</i><i>o</i><i>c</i><i>a</i><i>l</i><i>J</i><i>o</i><i>y</i></a>
         <div class="nav-right">
             <button class="chip room-chip" id="navCopy" title="Copy room code">
-                <i class="fa-solid fa-link"></i><span class="room-code">00000</span>
+                <span aria-hidden="true">🔗</span><span class="room-code">·····</span>
             </button>
-            <button class="chip icon-chip" id="fullscreenBtn" title="Fullscreen">
-                <i class="fa-solid fa-expand"></i>
+            <button class="chip icon-chip" id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen">
+                <span id="fsIcon" aria-hidden="true">⛶</span>
             </button>
         </div>
     </header>
@@ -34,15 +36,14 @@
     <main class="lobby">
         <section class="connect">
             <p class="connect-title">
-            <span class="highlight">Connect controllers</span>
-            Enter the code below or scan the QR code
+                <span class="highlight">Connect controllers</span>
+                Type the code on your phone or scan the QR code
             </p>
 
-            <button class="room-id" id="roomCopy" title="Click to copy">
-            <i class="fa-solid fa-link"></i>
-            <span class="room-code">00000</span>
+            <button class="room-id" id="roomCopy" title="Click to copy" aria-label="Copy room code">
+                <span class="blocks" id="blocks" aria-live="polite"></span>
             </button>
-            <span class="copied" id="copiedMsg">Code copied</span>
+            <span class="copied" id="copiedMsg" role="status">Code copied!</span>
 
             <p class="or"><span>or</span></p>
 
