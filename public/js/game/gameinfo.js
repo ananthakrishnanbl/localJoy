@@ -7,7 +7,7 @@ export const CONTROLLERS = {
   dual:   "Twin sticks",
   tilt:   "Tilt your phone",
   choice: "Multiple choice",
-  hand:   "Private hand of cards",
+  race: "Tilt steering + gas/brake",
 };
 
 export const GAMES = [
@@ -113,6 +113,22 @@ export const GAMES = [
         controller: "dual",
         entry: "/js/game/shooter/main.js",
     },
+    {
+      id: "moto-race",
+      title: "Turbo Bikes",
+      tagline: "Tilt to steer, race to the line",
+      description: "Hold your phone like a steering wheel. Pick a bike, hit the gas, and keep out of the sand and mountains.",
+      cover: "/assets/games/moto-race-cover.svg",
+      banner: "/assets/games/moto-race-banner.svg",
+      emoji: "🏍️",
+      color: "#ff8a3d",
+      minPlayers: 1,
+      maxPlayers: 4,
+      rating: 4.5,
+      tags: ["Racing", "Motion"],
+      controller: "race",
+      entry: "/js/game/moto-race/main.js",
+    }
 ];
 
 export const getGame = (id) => GAMES.find((g) => g.id === id);
