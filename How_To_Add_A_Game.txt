@@ -1,0 +1,532 @@
+=====================================================================
+  HOW TO ADD A GAME TO THE PHONE-CONTROLLER GAME CONSOLE
+=====================================================================
+
+You do NOT need to read or change the rest of the website code.
+You only need to do three things:
+
+  1. Describe your game in  gameinfo.js
+  2. Add the pictures for it
+  3. Write your game in     /js/game/<your-game-id>/main.js
+
+(Optional) 4. If the existing phone controllers are not enough,
+              make a new controller design (see PART 5).
+
+
+---------------------------------------------------------------------
+PART 0 - HOW THE SYSTEM WORKS (read this first, 1 minute)
+---------------------------------------------------------------------
+
+* The big screen (laptop/TV) runs the "console". Phones join it with a
+  5-letter room code and become the controllers.
+* Every player gets a SLOT number: 0, 1, 2 ... 9 (max 10 players).
+  The slot is the player's ID. Slot 0 is not special; it is just the
+  first free number.
+* The HOST is the first player who joined (and is still connected).
+  The host chooses the game and can exit it. If the host leaves, the next
+  earliest player becomes host automatically.
+* Screens go:  lobby  ->  select game  ->  game.
+* When a game is chosen, the console loads your main.js, calls
+  start(ctx), and shows the right controller on every phone.
+* Phones send input -> console turns it into browser events ->
+  YOUR game listens to those events.
+* Your game can send messages back to phones (vibrate, health bar, etc).
+
+You never touch networking. You only use "ctx" and browser events.
+
+
+---------------------------------------------------------------------
+PART 1 - STEP 1: ADD THE GAME TO gameinfo.js
+---------------------------------------------------------------------
+
+Open gameinfo.js. Add one object to the GAMES array. Example:
+
+  {
+    id: "my-game",
+    title: "My Game",
+    tagline: "One short exciting line",
+    description: "Two or three sentences explaining the game and controls.",
+    cover:  "/assets/games/my-game-cover.svg",
+    banner: "/assets/games/my-game-banner.svg",
+    emoji: "🎲",
+    color: "#3b8bff",
+    minPlayers: 1,
+    maxPlayers: 4,
+    rating: 4,
+    tags: ["Party", "Fun"],
+    controller: "pad",
+    entry: "/js/game/my-game/main.js",
+  },
+
+What each field means:
+
+  id          Unique short name, lowercase, no spaces. Also use it as
+              the folder name for your code.
+  title       Name shown on the card and the detail panel.
+  tagline     Short line shown under the title.
+  description Longer text shown on the detail panel.
+  cover       Square picture for the game card on the shelf.
+  banner      Wide picture for the detail panel.
+              (If a picture file is missing, the emoji is shown instead,
+              so nothing breaks.)
+  emoji       Fallback icon when the images are missing/loading.
+  color       Accent colour of the card and panel (any CSS colour).
+  minPlayers  Fewest players needed. If fewer are connected the card is
+              greyed out and the host cannot start it.
+  maxPlayers  Most players allowed. If more are connected the host
+              cannot start it. (Hard limit of the console is 10.)
+  rating      Number 0 to 5 (decimals ok, e.g. 4.5). Shows as stars.
+  tags        List of short words shown as small pills.
+  controller  Which phone controller your game uses. Must be a key that
+              exists in the controller registry (see PART 4).
+              Built in: "pad", "dual", "tilt", "choice".
+  entry       Path to your game's main.js file.
+
+Also in gameinfo.js there is  CONTROLLERS = { pad: "...", dual: "..." }.
+That is only the text shown as "Controls: ..." on the detail panel.
+If you create a NEW controller type, add a line for it there too
+(see PART 5).
+
+Note: the "controller" value must match the controller's id. If it does
+not exist, the phone falls back to the joystick pad ("pad") and shows a
+warning in the browser console.
+
+
+---------------------------------------------------------------------
+PART 2 - STEP 2: ADD THE PICTURES
+---------------------------------------------------------------------
+
+Put the cover and banner images in /assets/games/ using the same file
+names you wrote in gameinfo.js. SVG, PNG or JPG all work. Square for
+the cover, wide (about 16:9) for the banner.
+
+
+---------------------------------------------------------------------
+PART 3 - STEP 3: WRITE THE GAME  (/js/game/<id>/main.js)
+---------------------------------------------------------------------
+
+Create the folder /js/game/<id>/ and a file main.js in it. It must be
+an ES module (it is loaded with import()), and it must EXPORT a
+function called  start.
+
+3.1  THE ESSENTIAL FUNCTION:  export function start(ctx)
+-----------------------------------------------------------
+
+  export function start(ctx) {
+    // build your game here
+    return {
+      destroy() {
+        // stop everything your game started
+      },
+    };
+  }
+
+WHAT IT IS:   The single entry point. The console calls it once when
+              the host picks your game.
+WHAT IT GETS: one argument, "ctx" (described in 3.2).
+WHAT IT RETURNS: an object { destroy() }. It may also be "async" and
+              return a Promise of that object. Returning nothing is
+              allowed, but then you get no cleanup call (not
+              recommended).
+WHY NEEDED:   Without start() the console cannot run your game and
+              shows "Could not load <title>". The host can still press
+              B on their phone to leave.
+
+3.2  THE ESSENTIAL CLEANUP FUNCTION:  destroy()
+-----------------------------------------------
+
+WHAT IT IS:   Called by the console when the game ends (host pressed
+              Exit, or everybody left).
+WHAT IT RETURNS: nothing.
+WHY NEEDED:   The page is NOT reloaded between games. If you do not
+              clean up, your game keeps running in the background.
+              In destroy() you must:
+                - cancelAnimationFrame(...) your loop
+                - clearInterval / clearTimeout any timers
+                - remove any <style> tags you added to document.head
+                - stop audio, close anything you opened
+              (Event listeners that you attached with ctx.signal are
+              removed automatically, see below.)
+
+3.3  WHAT "ctx" CONTAINS  (everything is given to you, nothing to import)
+-----------------------------------------------------------------------
+
+  ctx.root
+      TYPE: HTML element.
+      WHAT: An empty box on the big screen. Draw your game inside it
+            (append a <canvas> or HTML). It is cleared for you when
+            the game ends. Call root.replaceChildren(yourElement).
+
+  ctx.signal
+      TYPE: AbortSignal.
+      WHAT: Becomes "aborted" when the game ends.
+      USE:  window.addEventListener("keydown", fn, { signal: ctx.signal })
+            The listener removes itself at the end of the game, so you
+            do not need to remove it in destroy().
+
+  ctx.players()
+      RETURNS: array of everyone currently connected:
+               [{ slot, name, color, animal, host }, ...]
+      USE:  Call it ONCE at the start to create a character for the
+            players who are already connected.
+            (Players who join later are announced by the "player-join"
+            event, see 3.4.)
+
+  ctx.player(slot)
+      RETURNS: { slot, name, color, animal, host }  or  null
+               if that player left.
+      USE:  Look up a player's CURRENT name/colour (names can change,
+            so look it up when drawing, do not copy it once).
+              slot    number 0-9, the player's ID
+              name    text, max 12 characters
+              color   hex colour like "#ff5a5f", unique per slot
+              animal  emoji for the player
+              host    true if this player is the host
+
+  ctx.send(slot, msg)
+      RETURNS: nothing.
+      USE:  Send a message object to ONE phone (see 3.5 for message
+            types). Safe to call even if that phone has just left.
+
+  ctx.broadcast(msg)
+      RETURNS: nothing.
+      USE:  Send the same message object to ALL phones.
+
+  ctx.exit()
+      RETURNS: nothing.
+      USE:  Ends your game and takes everybody back to the game select
+            screen (this also calls your destroy()). Use it when your
+            game is completely finished.
+
+3.4  EVENTS YOUR GAME LISTENS TO  (on window)
+---------------------------------------------
+
+Register them like this so they clean up automatically:
+
+  const on = (target, type, fn) =>
+    target.addEventListener(type, fn, { signal: ctx.signal });
+
+  "player-join"
+      e.detail = { slot, name, color, animal, host }
+      FIRES: when someone connects during your game.
+      DO:    create a new character for e.detail.slot.
+
+  "player-leave"
+      e.detail = { slot }
+      FIRES: when someone disconnects.
+      DO:    remove that player's character and anything they own.
+
+  "controller-input"
+      e.detail = { slot, name, host, data }
+        slot  which player sent it (number)
+        host  true if that player is the host
+        data  the message from the phone's controller. Its shape
+              depends on the controller type:
+
+        controller "pad" (joystick + buttons):
+            { type: "move",   x, y }          stick position, -1 to 1
+            { type: "button", id, pressed }   id is "A" or "B", pressed
+                                              is true/false
+        controller "dual" (twin sticks):
+            { type: "dual", mx, my, ax, ay }  left stick (mx,my) and
+                                              right stick (ax,ay),
+                                              each -1 to 1
+        controller "tilt" / "choice":
+            Their own message shapes. Open js/pad/tilt.js or
+            js/pad/choice.js and look at the io.send(...) calls to see
+            exactly what they send.
+
+      DO:    ALWAYS check data.type first and ignore types you do not
+             use. Always clamp numbers (stick values) to -1..1 in
+             case of bad data. Store the latest input on the player
+             (do not move things directly inside the event); read it
+             in your game loop.
+
+  Things the console handles for you (you do not code them):
+    - Host "Exit" button -> console ends your game.
+    - Host pressing B when your game failed to load -> exits.
+    - Everybody leaving -> returns to the lobby.
+  NOTE: while your game IS running, button B is passed to your game as a
+  normal controller-input, it does not exit.
+
+3.5  MESSAGES YOUR GAME CAN SEND TO PHONES
+------------------------------------------
+
+Use ctx.send(slot, msg) or ctx.broadcast(msg).
+
+  { type: "vibrate", ms: 50 }
+      Buzz the phone. ms can be a number or a pattern array like
+      [100, 60, 100]. Use for hits, deaths, wins.
+
+  { type: "hud", hp: 0-100, text: "5 kills", down: false }
+      Shows a small status bar on the phone. All three are optional:
+        hp    number 0-100 draws a health bar (green/yellow/red).
+              Leave it out to hide the bar.
+        text  any short text (score, lives, "Your turn").
+        down  true shows a "down / respawning" banner.
+      Send it again whenever something changes (not every frame; a few
+      times per second at most).
+
+  Any other object, for example { type: "question", options: [...] }
+      Is handed to the phone's controller module in its
+      onMessage(msg) function. Only a controller that understands that
+      message does something with it (e.g. the "choice" controller
+      for quiz answers). For a brand-new controller you decide the
+      messages (see PART 5).
+
+3.6  TYPICAL STRUCTURE OF A GAME (copy this)
+--------------------------------------------
+
+  export function start(ctx) {
+    const { root, signal } = ctx;
+
+    // 1. Build the display
+    const canvas = document.createElement("canvas");
+    canvas.width = 1280; canvas.height = 720;      // fixed logical size
+    root.replaceChildren(canvas);
+    const g = canvas.getContext("2d");
+
+    // 2. Game state: one entry per player, keyed by slot
+    const chars = new Map();
+    const add = (slot) => {
+      if (!chars.has(slot))
+        chars.set(slot, { slot, x: 640, y: 360, input: { x: 0, y: 0 } });
+    };
+    ctx.players().forEach((p) => add(p.slot));     // already connected
+
+    // 3. Events
+    const on = (t, type, fn) => t.addEventListener(type, fn, { signal });
+    on(window, "player-join",  (e) => add(e.detail.slot));
+    on(window, "player-leave", (e) => chars.delete(e.detail.slot));
+    on(window, "controller-input", (e) => {
+      const { slot, data } = e.detail;
+      const c = chars.get(slot);
+      if (c && data.type === "move") c.input = { x: data.x, y: data.y };
+    });
+
+    // 4. Game loop (update + draw)
+    let last = performance.now(), raf = 0;
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);   // seconds
+      last = now;
+      for (const c of chars.values()) {
+        c.x += c.input.x * 200 * dt;
+        c.y += c.input.y * 200 * dt;
+      }
+      g.clearRect(0, 0, 1280, 720);
+      for (const c of chars.values()) {
+        const info = ctx.player(c.slot);               // name + colour
+        g.fillStyle = info ? info.color : "#888";
+        g.fillRect(c.x - 10, c.y - 10, 20, 20);
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+
+    // 5. Cleanup
+    return { destroy() { cancelAnimationFrame(raf); } };
+  }
+
+TIPS
+  - Use a fixed canvas size (e.g. 1280x720) and let CSS scale it to
+    fit the screen. The Blast Arena example does this with
+    max-width / max-height / aspect-ratio: 16 / 9.
+  - If you add CSS, create a <style> element, append it to
+    document.head, and remove it in destroy(). Prefix your class names
+    (e.g. .mygame-wrap) so they do not clash with the site.
+    Theme variables available: var(--ink), var(--shadow).
+  - Use the player's slot as the key for everything.
+  - Do the game rules in a fixed step (e.g. 1/60 second) if you need
+    fair/consistent physics (see "acc" in the Blast Arena loop).
+  - Do NOT enforce min/max players inside the game; the select page
+    already does it. But DO handle players joining/leaving mid-game.
+  - Keyboard test player: while building, it helps to let the keyboard
+    control a fake player (slot "kb") so you can test without a phone.
+  - Game must never rely on the page reloading; it must be able to be
+    started again after destroy().
+
+
+---------------------------------------------------------------------
+PART 4 - WHICH CONTROLLER DOES MY GAME NEED?
+---------------------------------------------------------------------
+
+Pick one id for the "controller" field in gameinfo.js:
+
+  pad     Joystick + buttons (A and B)        sends "move", "button"
+  dual    Twin sticks (move + aim/fire)       sends "dual"
+  tilt    Phone tilt sensor                   sends tilt values
+  choice  Multiple-choice answer buttons      sends the chosen answer
+
+The list of available controllers lives in  js/pad/index.js  (the PADS
+object). Whatever name is in PADS is a valid "controller" value.
+
+Important: the host ALWAYS gets the joystick "pad" on the select-game
+screen (to browse and pick games with the stick + A/B), no matter what
+controller your game uses. Your controller only appears once the game
+starts.
+
+If none of these fit what you need, go to PART 5.
+
+
+---------------------------------------------------------------------
+PART 5 - MAKING A NEW CONTROLLER DESIGN
+---------------------------------------------------------------------
+
+Example reasons: a single big "tap" button, a steering wheel, a card
+hand, a drawing area, a number keypad.
+
+A controller ("pad") is a small JavaScript module that builds buttons
+inside the phone screen and sends messages to the game.
+
+STEP A: Create the file  js/pad/<name>.js
+-------------------------------------------
+
+  export default {
+    id: "tapper",                    // the name used in gameinfo.js
+
+    mount(root, io) {
+      // root = empty element on the phone. Build your UI inside it.
+      // io   = { send(msg) }  sends a message object to the console
+      //        (and from there to your game as "controller-input").
+
+      const style = document.createElement("style");
+      style.textContent = `
+        .tapper-btn {
+          width: 60%; height: 60%;
+          font-size: 3rem; border-radius: 50%;
+          touch-action: none;
+        }`;
+      document.head.append(style);
+
+      const btn = document.createElement("button");
+      btn.className = "tapper-btn";
+      btn.textContent = "TAP";
+      root.append(btn);
+
+      const down = () => io.send({ type: "tap", pressed: true });
+      const up   = () => io.send({ type: "tap", pressed: false });
+      btn.addEventListener("pointerdown", down);
+      btn.addEventListener("pointerup", up);
+      btn.addEventListener("pointercancel", up);
+
+      return {
+        release() {
+          // Let go of every input. Called when the tab is hidden, the
+          // connection drops, or the pad is swapped. Send a "nothing is
+          // pressed" message so the game does not get stuck with a
+          // button/stick held down.
+          up();
+        },
+        destroy() {
+          // Remove anything outside root: window listeners, timers,
+          // sensors, <style> tags. (root itself is cleared for you.)
+          style.remove();
+        },
+        onMessage(msg) {
+          // Messages the GAME sent with ctx.send / ctx.broadcast that
+          // are not "vibrate" or "hud". Update your UI from them,
+          // e.g. show the question's answer buttons.
+        },
+      };
+    },
+  };
+
+What each part is and why:
+
+  id           Unique name. Must match the key used in gameinfo.js
+               ("controller: 'tapper'"). Without it the controller
+               cannot be found.
+  mount(root, io)
+               Required. Called when this controller must appear.
+               RETURNS an object with up to three optional functions:
+                 release()        stop all held inputs (safety)
+                 destroy()        remove everything you added outside
+                                  root (called when swapping pads)
+                 onMessage(msg)   receive custom messages from the game
+               All three are optional but strongly recommended;
+               release() and destroy() prevent stuck buttons and
+               leftover timers.
+  io.send(msg) Send any plain object. It arrives in the game as
+               e.detail.data inside the "controller-input" event.
+               Always include a "type" field so the game can tell
+               messages apart.
+               Do not use these reserved types: "join", "ready",
+               "exit", they are used by the console.
+               Send only when something changes (or at most about 30
+               times per second for sticks) so the connection is not
+               flooded.
+
+Phone-screen tips
+  - The phone page blocks scrolling and the long-press menu, so you do
+    not need to handle that.
+  - Use  touch-action: none  on your touch areas, and use pointer events
+    (pointerdown / pointermove / pointerup / pointercancel).
+  - Handle multi-touch if needed (two thumbs, like the twin-stick pad)
+    by tracking pointerId.
+  - The phone is shown in landscape, so design wide, big controls.
+  - The theme colour of the player is in the CSS variable  --player.
+  - Make your buttons large; thumbs are not precise.
+  - Put your CSS inside a <style> you add in mount() and remove in
+    destroy(), and prefix your class names.
+
+STEP B: Register it in  js/pad/index.js
+-----------------------------------------
+
+Add two lines:
+
+  import tapper from "./tapper.js";      // with the other imports
+
+  const PADS = {
+    ...
+    [tapper.id]: tapper,                 // inside the PADS object
+  };
+
+STEP C: Give it a label in gameinfo.js
+---------------------------------------
+
+In CONTROLLERS add:
+
+  tapper: "One big tap button",
+
+(This is only the text shown on the game detail panel.)
+
+STEP D: Use it in your game
+----------------------------
+
+In your game's entry in gameinfo.js set:   controller: "tapper",
+
+In your game's main.js read the messages in "controller-input":
+
+  on(window, "controller-input", (e) => {
+    const { slot, data } = e.detail;
+    if (data.type === "tap") { /* data.pressed is true or false */ }
+  });
+
+(Optional) Messages game -> controller
+  Game:        ctx.send(slot, { type: "prompt", text: "Go!" });
+  Controller:  onMessage(msg) { if (msg.type === "prompt") ... }
+
+Note: "hand" appears in the CONTROLLERS list of gameinfo.js as an idea
+for a private card-hand controller, but no pad is registered under that
+name yet. If your game uses controller: "hand", you must create and
+register js/pad/hand.js (PART 5, steps A to C) first, or the phone will
+fall back to the joystick pad.
+
+
+---------------------------------------------------------------------
+QUICK CHECKLIST
+---------------------------------------------------------------------
+
+  [ ] Added the game object to GAMES in gameinfo.js
+  [ ] Cover + banner images are in /assets/games/ (or emoji fallback)
+  [ ] /js/game/<id>/main.js exports start(ctx)
+  [ ] start() builds the display in ctx.root
+  [ ] Game creates characters for ctx.players() and for "player-join"
+  [ ] Game removes characters on "player-leave"
+  [ ] Game reads "controller-input" and checks data.type
+  [ ] start() returns { destroy() } that stops loops/timers/styles
+  [ ] "controller" in gameinfo.js is a registered controller id
+  [ ] If a new controller was needed: js/pad/<name>.js created,
+      registered in js/pad/index.js, labelled in CONTROLLERS
+  [ ] Tested with min players, max players, a player leaving mid-game,
+      the host pressing Exit, and starting the game a second time
