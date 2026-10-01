@@ -82,6 +82,46 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
   .room-chip .room-code { font-size: 18px; letter-spacing: 3px; }
   .icon-chip { padding: 0; width: 40px; background: var(--blue); color: #fff; box-shadow: 0 4px 0 #2159b8; font-size: 20px; }
   .icon-chip:active { box-shadow: 0 1px 0 #2159b8; }
+
+  /* Players in the navbar: hidden until a game is on screen (see body.playing below) */
+  .nav-players {
+    display: none;
+    list-style: none;
+    flex: 1;
+    min-width: 0;
+    margin: 0 16px;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+  }
+  .np {
+    --c: var(--blue);
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    animation: pop .5s cubic-bezier(.3, 1.8, .5, 1) both;
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      background: var(--c);
+      box-shadow: 0 3px 0 color-mix(in srgb, var(--c) 68%, #1a1030);
+    }
+    .name { display: none; font-weight: 700; font-size: 15px; }
+    .crown {
+      position: absolute;
+      top: -11px;
+      left: -5px;
+      font-size: 15px;
+      transform: rotate(-18deg);
+    }
+  }
 }
 
 /* ---------- Sidebar ---------- */
@@ -404,10 +444,9 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
   }
 }
 
-/* ---------- Game screen ---------- */
+/* ---------- Game screen (full width: the sidebar is hidden while playing) ---------- */
 .game {
-  margin-left: calc(var(--side-w) + var(--gap) * 2);
-  margin-right: var(--gap);
+  margin: 0 var(--gap);
   height: calc(100vh - var(--nav-h));
   padding-bottom: calc(var(--gap) + 8px);
 
@@ -420,7 +459,19 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
     text-align: center;
     font-size: 22px;
     font-weight: 600;
+    background: var(--paper);
+    border: 6px solid var(--ink);
+    border-radius: 36px;
+    box-shadow: 0 10px 0 var(--shadow);
+    overflow: hidden;
   }
+}
+
+/* ---------- While a game is on screen (console.js adds .playing to <body>) ---------- */
+body.playing .sidebar { display: none; }        /* sidebar vanishes */
+body.playing .nav-players { display: flex; }    /* players move into the navbar */
+@media (min-width: 1500px) {
+  .navbar .np .name { display: inline; }        /* show names too when there is room */
 }
 
 /* ---------- Animations ---------- */

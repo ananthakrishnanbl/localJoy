@@ -64,29 +64,11 @@
             </div>
         </section>
 
-        <section class="pad" id="pad" hidden>
-            <div class="stick" id="stick" aria-label="Joystick">
-                <div class="knob" id="knob"></div>
-            </div>
-
-            <div class="buttons">
-                <button class="btn" data-id="Y" style="grid-area:y">Y</button>
-                <button class="btn" data-id="X" style="grid-area:x">X</button>
-                <button class="btn" data-id="B" style="grid-area:b">B</button>
-                <button class="btn" data-id="A" style="grid-area:a">A</button>
-            </div>
-        </section>
-
-        <!-- Twin-stick pad: left stick moves, right stick aims and fires (controller type "dual") -->
-        <section class="pad" id="dualPad" hidden>
-            <div class="stick" id="moveStick" data-label="MOVE" aria-label="Move">
-                <div class="knob"></div>
-            </div>
-            <div class="stick aim" id="aimStick" data-label="AIM + FIRE" aria-label="Aim and fire">
-                <div class="knob"></div>
-            </div>
+        <!-- Pad area: controller.js builds the right controller into #padHost (see /js/pad/) -->
+        <div class="pad-area" id="padArea" hidden>
+            <section class="pad" id="padHost"></section>
             <div class="down" id="down" hidden>Respawning…</div>
-        </section>
+        </div>
 
         <div id="overlay" class="overlay" hidden>
             <div class="card">

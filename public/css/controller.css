@@ -428,3 +428,28 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Pad area (holds whichever pad module is mounted) ---------- */
+.pad-area { flex: 1; min-height: 0; position: relative; display: flex; }
+.pad-area .pad { flex: 1; }
+
+/* tilt pad: one big action button */
+.btn.big { width: var(--size); height: var(--size); font-size: calc(var(--size) / 4); }
+
+/* choice pad: answer buttons */
+.choices {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: center;
+  gap: 12px;
+  padding: 0 8px 10px;
+}
+.choices-msg { grid-column: 1 / -1; text-align: center; font-weight: 700; font-size: 20px; }
+.choices .choice {
+  min-height: 0;
+  height: clamp(56px, 22dvh, 110px);
+  padding: 8px 12px;
+  font-size: clamp(18px, 4dvh, 26px);
+  &.picked:disabled { opacity: 1; outline: 5px solid var(--ink); outline-offset: 2px; }
+}
