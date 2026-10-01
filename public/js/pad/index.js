@@ -14,6 +14,7 @@ import dual from "./dual.js";
 import tilt from "./tilt.js";
 import choice from "./choice.js";
 import race from "./race.js";
+import coop from "./coop.js";
 
 const PADS = {
   [gamepad.id]: gamepad,
@@ -21,6 +22,7 @@ const PADS = {
   [tilt.id]: tilt,
   [choice.id]: choice,
   [race.id]: race,            // <-- was missing: without it "race" fell back to the joystick pad
+  [coop.id]: coop,
 };
 
 export function getPad(type) {
