@@ -1,4 +1,5 @@
 import { PREFIX, peerOptions } from "/js/common.js";
+import { getPad } from "/js/pad/index.js";
 
 const $ = (id) => document.getElementById(id);
 const joinScreen = $("joinScreen");
@@ -9,11 +10,11 @@ const joinBtn = $("joinBtn");
 const statusEl = $("status");
 const dot = $("dot");
 const overlay = $("overlay");
-const pad = $("pad");
 const panel = $("panel");
+const padArea = $("padArea");
+const padHost = $("padHost");
 const readyBtn = $("readyBtn");
 const hostBadge = $("hostBadge");
-const dualPad = $("dualPad");
 const hud = $("hud");
 const hpWrap = $("hpWrap");
 const hpFill = $("hpFill");
@@ -28,7 +29,6 @@ let inGame = false;
 let rejected = false;
 let joinTimer = null;
 let wakeLock = null;
-const releasers = [];   // functions that let go of every input (used when the tab is hidden)
 
 /* ---------------- Join form ---------------- */
 const params = new URLSearchParams(location.search);
@@ -120,31 +120,50 @@ function onData(data) {
     navigator.vibrate?.(data.ms || 50);   // the game can buzz a phone
   } else if (data.type === "hud") {
     showHud(data);
+  } else {
+    current?.instance.onMessage?.(data);  // anything else goes to the active pad (e.g. quiz choices)
   }
 }
 
-// The console tells us which screen it is on and whether we are the host.
-// Which pad each game controller type uses. Types not listed here get the joystick + buttons pad.
-const PADS = { dual: dualPad };
-let currentPad = null;
+/* ---------------- Pads (see /js/pad/) ---------------- */
 
+// What every pad module receives
+const io = { send };
+
+let current = null;   // { type, instance } for the pad on screen
+
+function releaseAll() {
+  current?.instance.release?.();
+}
+
+// Shows the pad for `type`, or the waiting panel when type is null
+function showPad(type) {
+  if (current?.type !== type) {
+    if (current) {
+      current.instance.release?.();
+      current.instance.destroy?.();
+      padHost.replaceChildren();
+      current = null;
+    }
+    if (type) current = { type, instance: getPad(type).mount(padHost, io) || {} };
+  }
+  padArea.hidden = !type;
+  panel.hidden = !!type;
+}
+
+// The console tells us which screen it is on, whether we are the host, and which pad the game wants.
 function applyState({ screen, host, controller }) {
   if (host && !isHost) navigator.vibrate?.([40, 60, 40]);   // you just became the host
   isHost = !!host;
   hostBadge.hidden = !isHost;
 
-  const inGame = screen === "game";
-  const activePad = inGame ? PADS[controller] || pad : screen === "select" && isHost ? pad : null;
-  if (activePad !== currentPad) releaseAll();
-  currentPad = activePad;
-  pad.hidden = activePad !== pad;
-  dualPad.hidden = activePad !== dualPad;
-  panel.hidden = !!activePad;
+  const playing = screen === "game";
+  showPad(playing ? controller || "pad" : screen === "select" && isHost ? "pad" : null);
   readyBtn.hidden = !(isHost && screen === "lobby");
 
-  exitBtn.hidden = !(isHost && inGame);
+  exitBtn.hidden = !(isHost && playing);
   resetExit();
-  if (!inGame) hud.hidden = true;
+  if (!playing) hud.hidden = true;
 
   const set = (icon, title, text) => {
     $("panelIcon").textContent = icon;
@@ -175,94 +194,6 @@ function lost(msg) {
 
 function send(msg) {
   if (conn && conn.open) conn.send(msg);
-}
-
-/* ---------------- Joystick ---------------- */
-
-const turned = matchMedia("(orientation: portrait)");
-
-// Turns a .stick dish into a joystick. emit(x, y) gets -1..1 on each axis (y: -1 up, 1 down).
-function makeStick(stick, emit) {
-  const knob = stick.querySelector(".knob");
-  let pointerId = null;
-  let last = "";
-  let lastSent = 0;
-
-  function report(x, y, force = false) {
-    const key = `${x},${y}`;
-    const now = performance.now();
-    if (key === last || (!force && now - lastSent < 25)) return;   // ~40 updates per second max
-    last = key;
-    lastSent = now;
-    emit(x, y);
-  }
-
-  function update(e) {
-    const rect = stick.getBoundingClientRect();
-    const max = (rect.width - knob.offsetWidth) / 2;
-    let dx = e.clientX - (rect.left + rect.width / 2);
-    let dy = e.clientY - (rect.top + rect.height / 2);
-    if (turned.matches) [dx, dy] = [dy, -dx];   // pad is rotated 90° when the phone is upright
-    const dist = Math.hypot(dx, dy);
-    if (dist > max) { dx = (dx / dist) * max; dy = (dy / dist) * max; }
-    knob.style.transform = `translate(${dx}px, ${dy}px)`;
-
-    let x = dx / max;
-    let y = dy / max;
-    if (Math.hypot(x, y) < 0.12) { x = 0; y = 0; }   // dead zone
-    report(+x.toFixed(2), +y.toFixed(2));
-  }
-
-  function release() {
-    if (pointerId === null) return;
-    pointerId = null;
-    knob.classList.remove("active");
-    knob.style.transform = "";
-    report(0, 0, true);
-  }
-
-  stick.addEventListener("pointerdown", (e) => {
-    if (pointerId !== null) return;
-    e.preventDefault();
-    pointerId = e.pointerId;
-    stick.setPointerCapture(pointerId);
-    knob.classList.add("active");
-    navigator.vibrate?.(8);
-    update(e);
-  });
-  stick.addEventListener("pointermove", (e) => e.pointerId === pointerId && update(e));
-  stick.addEventListener("pointerup", (e) => e.pointerId === pointerId && release());
-  stick.addEventListener("pointercancel", (e) => e.pointerId === pointerId && release());
-  stick.addEventListener("lostpointercapture", (e) => e.pointerId === pointerId && release());
-  releasers.push(release);
-}
-
-/* ---------------- Buttons ---------------- */
-
-function setupButtons() {
-  document.querySelectorAll(".btn").forEach((btn) => {
-    const id = btn.dataset.id;
-
-    const set = (pressed) => {
-      btn.classList.toggle("down", pressed);
-      send({ type: "button", id, pressed });
-      if (pressed) navigator.vibrate?.(12);
-    };
-    const up = () => btn.classList.contains("down") && set(false);
-
-    btn.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      btn.setPointerCapture(e.pointerId);
-      set(true);
-    });
-    btn.addEventListener("pointerup", up);
-    btn.addEventListener("pointercancel", up);
-    releasers.push(up);
-  });
-}
-
-function releaseAll() {
-  releasers.forEach((fn) => fn());
 }
 
 /* ---------------- Game HUD + exit ---------------- */
@@ -331,13 +262,3 @@ document.addEventListener("visibilitychange", () => {
 });
 document.addEventListener("touchmove", (e) => { if (inGame) e.preventDefault(); }, { passive: false });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
-
-// Menu pad: one stick, sends "move"
-makeStick($("stick"), (x, y) => send({ type: "move", x, y }));
-
-// Twin-stick pad: left moves, right aims. Both go out together as "dual".
-const dual = { mx: 0, my: 0, ax: 0, ay: 0 };
-makeStick($("moveStick"), (x, y) => { dual.mx = x; dual.my = y; send({ type: "dual", ...dual }); });
-makeStick($("aimStick"),  (x, y) => { dual.ax = x; dual.ay = y; send({ type: "dual", ...dual }); });
-
-setupButtons();

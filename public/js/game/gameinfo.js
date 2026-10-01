@@ -4,6 +4,7 @@
 
 export const CONTROLLERS = {
   pad:    "Joystick + buttons",
+  dual:   "Twin sticks",
   tilt:   "Tilt your phone",
   choice: "Multiple choice",
   hand:   "Private hand of cards",

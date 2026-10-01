@@ -20,6 +20,7 @@ const countEl = $("playerCount");
 const qrEl = $("qr");
 const blocksEl = $("blocks");
 const copiedMsg = $("copiedMsg");
+const navPlayersEl = $("navPlayers");
 const hostHint = $("hostHint");
 const screens = { lobby: $("lobbyScreen"), select: $("selectScreen"), game: $("gameScreen") };
 
@@ -99,6 +100,8 @@ function broadcastState() {
 function setScreen(name) {
   screen = name;
   for (const [id, el] of Object.entries(screens)) el.hidden = id !== name;
+  document.body.classList.toggle("playing", name === "game");   // CSS hides the sidebar and enlarges the game
+  renderNavPlayers();
   window.dispatchEvent(new CustomEvent("screen-change", { detail: { screen: name } }));
   broadcastState();
 }
@@ -278,9 +281,41 @@ function renderPlayers() {
     ? `👑 ${host.name} is the host. Tap Ready on your phone when everyone has joined.`
     : "Waiting for the first player to join…";
 
+  renderNavPlayers();
+
   window.dispatchEvent(new CustomEvent("players-change", {
     detail: { count: players.size, hostName: host ? host.name : "" },
   }));
+}
+
+// Players shown in the navbar, only while a game is on screen
+function renderNavPlayers() {
+  navPlayersEl.replaceChildren();
+  if (screen !== "game") return;
+
+  const host = getHost();
+  for (const player of [...players.values()].sort((a, b) => a.slot - b.slot)) {
+    const li = document.createElement("li");
+    li.className = "np";
+    li.style.setProperty("--c", COLORS[player.slot]);
+    li.title = player.name + (player === host ? " (host)" : "");
+
+    const avatar = document.createElement("span");
+    avatar.className = "avatar";
+    avatar.textContent = ANIMALS[player.slot];
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = player.name;
+    li.append(avatar, name);
+
+    if (player === host) {
+      const crown = document.createElement("span");
+      crown.className = "crown";
+      crown.textContent = "👑";
+      li.append(crown);
+    }
+    navPlayersEl.appendChild(li);
+  }
 }
 
 /* ---------------- Copy + fullscreen ---------------- */
