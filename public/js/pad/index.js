@@ -14,6 +14,7 @@ import dual from "./dual.js";
 import tilt from "./tilt.js";
 import choice from "./choice.js";
 import race from "./race.js";
+import ctf from "./ctf.js";
 
 const PADS = {
   [gamepad.id]: gamepad,
@@ -21,6 +22,7 @@ const PADS = {
   [tilt.id]: tilt,
   [choice.id]: choice,
   [race.id]: race,            // <-- was missing: without it "race" fell back to the joystick pad
+  [ctf.id]: ctf,              // capture the flag: basic pad for team select, twin sticks + fire in play
 };
 
 export function getPad(type) {
