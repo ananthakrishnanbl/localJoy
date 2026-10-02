@@ -14,7 +14,7 @@
 //  - Sand: low grip, heavy drag, weak engine.
 
 export const G = 9.81;
-export const BIKE_RADIUS = 1.1;
+export const BIKE_RADIUS = 2.3;      // collision circle, sized for the larger bike models
 
 const ENGINE = 18;          // m/s^2 at zero speed, full throttle
 const VMAX = 70;            // engine stops pulling here (drag keeps real top speed lower, ~190 km/h)
@@ -27,7 +27,7 @@ const MU_ROAD = 1.9;        // friction coefficient on tarmac (times g)
 const MU_SAND = 0.7;
 const SAND_DRAG = 1.0;      // extra linear drag on sand: bleeds off high speed quickly, then settles
 const SAND_POWER = 0.5;     // engine strength on sand. With the drag above, top speed on sand is ~30 km/h
-const WHEELBASE = 1.5;
+const WHEELBASE = 2.4;      // scaled up with the bigger bike and track
 const MAX_LOCK = 0.55;      // steering lock in radians at walking pace
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

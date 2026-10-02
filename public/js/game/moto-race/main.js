@@ -29,11 +29,13 @@ const RESULTS_TIME = 10;
 const KEYBOARD = "kb";
 const KB_INFO = { name: "Keyboard", animal: "⌨️" };
 
+// Same order as the models in bike.js: B1 scooter, B2 chopper, B3 cruiser, B4 sport bike.
+// "color" is only used for the swatches and name tags, it matches the model's main colour.
 const BIKES = [
-  { name: "Red Rocket", color: "#ff4d4d" },
-  { name: "Blue Bolt", color: "#3b8bff" },
-  { name: "Green Mamba", color: "#3ecf6e" },
-  { name: "Gold Rush", color: "#ffcf33" },
+  { name: "Pearl Scooter", color: "#e4e6ea" },
+  { name: "Gold Chopper", color: "#f0a41e" },
+  { name: "Navy Cruiser", color: "#2f3f9e" },
+  { name: "Red Rocket", color: "#e0401c" },
 ];
 
 const COAST = { steer: 0, gas: false, brake: true };
@@ -123,22 +125,21 @@ export function start(ctx) {
   const track = createTrack();
   scene.add(track.group);
 
-  // Showroom for the bike-select phase: one cube on a turntable, recoloured for every viewport
+  // Showroom for the bike-select phase: the four bike models on a turntable, each viewport shows the one its player picked
   const show = new THREE.Scene();
   show.background = new THREE.Color(0x14283a);
   show.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.1));
   const showLight = new THREE.DirectionalLight(0xffffff, 1.2);
   showLight.position.set(4, 8, 6);
   show.add(showLight);
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.2, 48), new THREE.MeshLambertMaterial({ color: 0x2b4257 }));
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 5.4, 0.2, 48), new THREE.MeshLambertMaterial({ color: 0x2b4257 }));
   floor.position.y = -0.1;
   show.add(floor);
-  const showBike = createBikeMesh("#ffffff");
-  showBike.root.scale.setScalar(1.5);
-  show.add(showBike.root);
+  const showBikes = BIKES.map((_, i) => createBikeMesh(i));      // models swap in by themselves once loaded
+  showBikes.forEach((s) => show.add(s.root));
   const showCam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-  showCam.position.set(0, 2.6, 6.4);
-  showCam.lookAt(0, 0.9, 0);
+  showCam.position.set(0, 4.4, 12.5);
+  showCam.lookAt(0, 1.5, 0);
 
   /* ---------------- State ---------------- */
 
@@ -231,7 +232,7 @@ export function start(ctx) {
       const r = racers.get(slot);
       const p = track.gridPose(k);
       r.bike = createBike(p.x, p.z, p.psi);
-      r.mesh = createBikeMesh(BIKES[r.bikeIdx].color);
+      r.mesh = createBikeMesh(r.bikeIdx);
       scene.add(r.mesh.root);
       r.idx = r.prevIdx = p.idx;
       r.lap = -1; r.progress = 0;
@@ -390,18 +391,17 @@ export function start(ctx) {
     const b = r.bike;
     const sp = Math.hypot(b.vx, b.vz);
     r.camYaw += angDiff(b.psi, r.camYaw) * (snap ? 1 : 1 - Math.exp(-6 * dt));   // swings round behind the bike with a little lag
-    const dist = 7.5 + sp * 0.04, h = 3 + sp * 0.015;
+    const dist = 15 + sp * 0.02, h = 5.8 + sp * 0.01;                             // almost constant, so the bike keeps its size on screen
+    // The camera sits exactly `dist` behind the bike, so it moves at the bike's speed and never falls behind.
+    // Only the height is smoothed. The swing round corners still lags a little through camYaw above.
     const tx = b.x - Math.sin(r.camYaw) * dist, tz = b.z - Math.cos(r.camYaw) * dist;
-    if (snap) r.camPos.set(tx, h, tz);
-    else {
-      const k = 1 - Math.exp(-12 * dt);
-      r.camPos.x += (tx - r.camPos.x) * k;
-      r.camPos.y += (h - r.camPos.y) * k;
-      r.camPos.z += (tz - r.camPos.z) * k;
-    }
+    if (snap) r.camPos.y = h;
+    else r.camPos.y += (h - r.camPos.y) * (1 - Math.exp(-8 * dt));
+    r.camPos.x = tx;
+    r.camPos.z = tz;
     r.cam.position.copy(r.camPos);
-    r.cam.fov = 62 + Math.min(sp, 60) * 0.5;                                      // wider view = more speed
-    r.cam.lookAt(b.x + Math.sin(r.camYaw) * 6, 1.3, b.z + Math.cos(r.camYaw) * 6);
+    r.cam.fov = 64 + Math.min(sp, 60) * 0.1;                                      // only a slight widening with speed
+    r.cam.lookAt(b.x + Math.sin(r.camYaw) * 11, 2.6, b.z + Math.cos(r.camYaw) * 11);
   }
 
   function render(timeSec) {
@@ -421,8 +421,8 @@ export function start(ctx) {
       renderer.setViewport(x, y, w, h);
       renderer.setScissor(x, y, w, h);
       if (phase === "select" || !r.bike) {
-        showBike.setColor(BIKES[r.bikeIdx].color);
-        showBike.root.rotation.y = timeSec * 0.9;
+        showBikes.forEach((s, i) => { s.root.visible = i === r.bikeIdx; });
+        showBikes[r.bikeIdx].root.rotation.y = timeSec * 0.9;
         showCam.aspect = w / h;
         showCam.updateProjectionMatrix();
         renderer.render(show, showCam);
