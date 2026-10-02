@@ -2,9 +2,10 @@
 // Also answers "where is this point relative to the road?" for the physics and lap counting.
 import * as THREE from "./three.js";
 
-export const ROAD_W = 20;
+export const SCALE = 1.4;        // the whole circuit is this much bigger than the original layout
+export const ROAD_W = 20 * SCALE;
 export const HALF = ROAD_W / 2;
-export const SAND_W = 20;        // sand strip on each side of the road. Past it is the mountain wall.
+export const SAND_W = 20 * SCALE;        // sand strip on each side of the road. Past it is the mountain wall.
 const N = 640;                   // number of samples along the centreline
 
 // Centreline control points [x, z]. Edit these to change the circuit.
@@ -72,7 +73,7 @@ const checkerTexture = () => canvasTexture(128, 32, (g, w, h) => {
 
 export function createTrack() {
   /* ---------- Centreline samples ---------- */
-  const curve = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x, 0, z)), true, "centripetal");
+  const curve = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x * SCALE, 0, z * SCALE)), true, "centripetal");
   curve.arcLengthDivisions = 4000;
   const pts = curve.getSpacedPoints(N);
   pts.pop();                                    // last point equals the first
@@ -99,7 +100,7 @@ export function createTrack() {
     new THREE.PlaneGeometry(5000, 5000).rotateX(-Math.PI / 2),
     new THREE.MeshLambertMaterial({ map: sandTexture() })
   );
-  ground.position.set(300, 0, 300);
+  ground.position.set(300 * SCALE, 0, 300 * SCALE);
   group.add(ground);
 
   const flat = (map) => new THREE.MeshLambertMaterial({
@@ -122,27 +123,27 @@ export function createTrack() {
     return new THREE.Mesh(g, material);
   }
 
-  group.add(ribbon(-HALF, HALF, 0.05, 25, flat(asphaltTexture())));
+  group.add(ribbon(-HALF, HALF, 0.05, 25 * SCALE, flat(asphaltTexture())));
   const kerb = flat(kerbTexture());
-  group.add(ribbon(HALF, HALF + 1.4, 0.06, 4, kerb));
-  group.add(ribbon(-HALF - 1.4, -HALF, 0.06, 4, kerb));
+  group.add(ribbon(HALF, HALF + 2, 0.06, 5.6, kerb));
+  group.add(ribbon(-HALF - 2, -HALF, 0.06, 5.6, kerb));
 
   // Start / finish line and gantry
   const s0 = samples[0], psi0 = Math.atan2(s0.tx, s0.tz);
-  const line = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 3).rotateX(-Math.PI / 2), flat(checkerTexture()));
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 4).rotateX(-Math.PI / 2), flat(checkerTexture()));
   line.position.set(s0.x, 0.08, s0.z);
   line.rotation.y = psi0;
   group.add(line);
 
   const gateMat = new THREE.MeshLambertMaterial({ color: 0xe23b3b });
   for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.9, 8, 0.9), gateMat);
-    const off = side * (HALF + 2);
-    post.position.set(s0.x + s0.lx * off, 4, s0.z + s0.lz * off);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(1.2, 11, 1.2), gateMat);
+    const off = side * (HALF + 3);
+    post.position.set(s0.x + s0.lx * off, 5.5, s0.z + s0.lz * off);
     group.add(post);
   }
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(ROAD_W + 5, 1.4, 1.2), new THREE.MeshLambertMaterial({ color: 0xf5f5f5 }));
-  beam.position.set(s0.x, 8, s0.z);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(ROAD_W + 7, 2, 1.6), new THREE.MeshLambertMaterial({ color: 0xf5f5f5 }));
+  beam.position.set(s0.x, 11, s0.z);
   beam.rotation.y = psi0;
   group.add(beam);
 
@@ -162,15 +163,15 @@ export function createTrack() {
   for (let i = 0; i < N; i += 7) {
     for (const side of [-1, 1]) {
       const s = samples[i];
-      const r = 20 + rnd() * 18, h = 28 + rnd() * 45;
+      const r = (20 + rnd() * 18) * SCALE, h = (28 + rnd() * 45) * SCALE;
       const off = HALF + SAND_W + r * 0.7 + rnd() * 8;
       place(s.x + s.lx * side * off, s.z + s.lz * side * off, r, h, 0);
     }
   }
   // big peaks further out
-  for (let i = 0; i < 400; i++) {
-    const r = 40 + rnd() * 50, h = 70 + rnd() * 100;
-    place(-900 + rnd() * 1900, -600 + rnd() * 1800, r, h, 20);
+  for (let i = 0; i < 560; i++) {
+    const r = (40 + rnd() * 50) * SCALE, h = (70 + rnd() * 100) * SCALE;
+    place((-900 + rnd() * 1900) * SCALE, (-600 + rnd() * 1800) * SCALE, r, h, 20 * SCALE);
   }
 
   const dummy = new THREE.Object3D();
@@ -188,7 +189,7 @@ export function createTrack() {
   rock.frustumCulled = false;
   group.add(rock);
 
-  const tall = mountains.filter((m) => m.h > 70);
+  const tall = mountains.filter((m) => m.h > 70 * SCALE);
   const snow = new THREE.InstancedMesh(cone, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), tall.length);
   tall.forEach((m, i) => {
     dummy.position.set(m.x, m.h * 0.82, m.z);
@@ -208,7 +209,7 @@ export function createTrack() {
       if (d < bd) { bd = d; best = i; }
     };
     if (hint != null && hint >= 0) for (let k = -14; k <= 14; k++) scan((hint + k + N) % N);   // cheap local search
-    if (best < 0 || bd > 35 * 35) { bd = Infinity; for (let i = 0; i < N; i++) scan(i); }       // lost it: search everything
+    if (best < 0 || bd > (35 * SCALE) ** 2) { bd = Infinity; for (let i = 0; i < N; i++) scan(i); }       // lost it: search everything
     return best;
   }
 
@@ -232,8 +233,8 @@ export function createTrack() {
   // Starting grid: two columns behind the line
   function gridPose(k) {
     const row = k >> 1, side = k & 1 ? 1 : -1;
-    const idx = (N - Math.round((8 + row * 9) / step) + N) % N;
-    const c = samples[idx], off = side * 3.2;
+    const idx = (N - Math.round((11 + row * 12) / step) + N) % N;
+    const c = samples[idx], off = side * 4.6;
     return { x: c.x + c.lx * off, z: c.z + c.lz * off, psi: Math.atan2(c.tx, c.tz), idx };
   }
 
