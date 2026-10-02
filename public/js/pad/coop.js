@@ -30,8 +30,10 @@ export default {
       btn2.className = "coop-btn";
 
       if (role === "steer") {
-        btn1.textContent = "⬅️";
-        btn2.textContent = "➡️";
+        // Chunky Left Arrow
+        btn1.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="14 18 8 12 14 6"></polyline></svg>`;
+        // Chunky Right Arrow
+        btn2.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="10 18 16 12 10 6"></polyline></svg>`;
         
         btn1.onpointerdown = () => { left = true; sendSteer(); };
         btn1.onpointerup = btn1.onpointercancel = () => { left = false; sendSteer(); };
@@ -39,8 +41,8 @@ export default {
         btn2.onpointerdown = () => { right = true; sendSteer(); };
         btn2.onpointerup = btn2.onpointercancel = () => { right = false; sendSteer(); };
       } else {
-        btn1.textContent = "⬇️"; // Brake/Reverse
-        btn2.textContent = "⬆️"; // Gas
+       btn1.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="6 10 12 16 18 10"></polyline></svg>`;
+        btn2.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="18 14 12 8 6 14"></polyline></svg>`;
         
         btn2.onpointerdown = () => { gas = true; sendPedal(); };
         btn2.onpointerup = btn2.onpointercancel = () => { gas = false; sendPedal(); };
