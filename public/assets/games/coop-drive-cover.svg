@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+  <!-- Blue Sky -->
+  <rect width="800" height="200" fill="#87ceeb"/>
+
+  <!-- Giant Horizon Sun -->
+  <circle cx="450" cy="200" r="90" fill="#ffeb3b" opacity="0.9"/>
+
+  <!-- Geometric Hills (Matching the reference's mountain style but with grass colors) -->
+  <!-- Back Layer (Dark Green) -->
+  <polygon points="-50,200 150,80 350,200" fill="#2e7d32"/>
+  <polygon points="450,200 650,70 850,200" fill="#2e7d32"/>
+  
+  <!-- Snow Caps -->
+  <polygon points="150,80 115,120 135,115 150,130 170,110 185,120" fill="#ffffff" opacity="0.8"/>
+  <polygon points="650,70 610,115 630,110 650,125 670,105 690,115" fill="#ffffff" opacity="0.8"/>
+
+  <!-- Mid Layer (Medium Green) -->
+  <polygon points="100,200 250,120 450,200" fill="#388e3c"/>
+  <polygon points="350,200 500,140 700,200" fill="#388e3c"/>
+
+  <!-- Front Layer (Light Green / Ground) -->
+  <rect y="200" width="800" height="200" fill="#4caf50"/>
+  <polygon points="-100,200 50,150 200,200" fill="#4caf50"/>
+  <polygon points="600,200 750,130 900,200" fill="#4caf50"/>
+
+  <!-- Curved Asphalt Road -->
+  <path d="M 50 400 Q 250 350 420 200 L 480 200 Q 550 350 750 400 Z" fill="#3a3a42"/>
+
+  <!-- Left Guardrail / Curb -->
+  <path d="M 50 400 Q 250 350 420 200" fill="none" stroke="#ffffff" stroke-width="12"/>
+  <path d="M 50 400 Q 250 350 420 200" fill="none" stroke="#ff3b3b" stroke-width="12" stroke-dasharray="30, 30"/>
+
+  <!-- Right Guardrail / Curb -->
+  <path d="M 750 400 Q 550 350 480 200" fill="none" stroke="#ffffff" stroke-width="12"/>
+  <path d="M 750 400 Q 550 350 480 200" fill="none" stroke="#ff3b3b" stroke-width="12" stroke-dasharray="30, 30"/>
+
+  <!-- Center Dashed Line -->
+  <path d="M 400 400 Q 400 350 450 200" fill="none" stroke="#ffffff" stroke-width="6" stroke-dasharray="25, 25" opacity="0.8"/>
+
+  <!-- Speed Lines on Grass -->
+  <path d="M 150 350 L 100 380" stroke="#ffffff" stroke-width="4" opacity="0.3" stroke-linecap="round"/>
+  <path d="M 220 280 L 190 300" stroke="#ffffff" stroke-width="4" opacity="0.3" stroke-linecap="round"/>
+  <path d="M 650 350 L 700 380" stroke="#ffffff" stroke-width="4" opacity="0.3" stroke-linecap="round"/>
+  <path d="M 580 280 L 610 300" stroke="#ffffff" stroke-width="4" opacity="0.3" stroke-linecap="round"/>
+
+  <!-- Car 2: Red (Midground, Right Lane) -->
+  <g transform="translate(500, 250) scale(0.4)">
+    <!-- Shadow -->
+    <ellipse cx="0" cy="20" rx="60" ry="15" fill="#1a1a24" opacity="0.8"/>
+    <!-- Tires -->
+    <rect x="-55" y="-10" width="20" height="30" rx="3" fill="#111111"/>
+    <rect x="35" y="-10" width="20" height="30" rx="3" fill="#111111"/>
+    <!-- Body Base -->
+    <path d="M -50 -30 L 50 -30 L 55 5 L -55 5 Z" fill="#b71c1c"/>
+    <!-- Bumper -->
+    <rect x="-55" y="-15" width="110" height="25" rx="4" fill="#f44336"/>
+    <!-- Cabin -->
+    <path d="M -35 -55 L 35 -55 L 50 -25 L -50 -25 Z" fill="#f44336"/>
+    <!-- Rear Window -->
+    <path d="M -28 -50 L 28 -50 L 40 -28 L -40 -28 Z" fill="#1b2a3a"/>
+    <!-- Tail lights -->
+    <rect x="-45" y="-10" width="25" height="8" rx="2" fill="#ffcccc"/>
+    <rect x="20" y="-10" width="25" height="8" rx="2" fill="#ffcccc"/>
+    <!-- License Plate -->
+    <rect x="-10" y="-2" width="20" height="8" rx="1" fill="#f0f0f0"/>
+  </g>
+
+  <!-- Car 1: Yellow (Foreground, Left Lane) -->
+  <g transform="translate(260, 340) scale(0.85)">
+    <!-- Shadow -->
+    <ellipse cx="0" cy="20" rx="60" ry="15" fill="#1a1a24" opacity="0.8"/>
+    <!-- Tires -->
+    <rect x="-55" y="-10" width="20" height="30" rx="3" fill="#111111"/>
+    <rect x="35" y="-10" width="20" height="30" rx="3" fill="#111111"/>
+    <!-- Body Base -->
+    <path d="M -50 -30 L 50 -30 L 55 5 L -55 5 Z" fill="#f57f17"/>
+    <!-- Bumper -->
+    <rect x="-55" y="-15" width="110" height="25" rx="4" fill="#ffeb3b"/>
+    <!-- Cabin -->
+    <path d="M -35 -55 L 35 -55 L 50 -25 L -50 -25 Z" fill="#ffeb3b"/>
+    <!-- Rear Window -->
+    <path d="M -28 -50 L 28 -50 L 40 -28 L -40 -28 Z" fill="#1b2a3a"/>
+    <!-- Tail lights -->
+    <rect x="-45" y="-10" width="25" height="8" rx="2" fill="#ff3b3b"/>
+    <rect x="20" y="-10" width="25" height="8" rx="2" fill="#ff3b3b"/>
+    <!-- License Plate -->
+    <rect x="-10" y="-2" width="20" height="8" rx="1" fill="#f0f0f0"/>
+  </g>
+</svg>
