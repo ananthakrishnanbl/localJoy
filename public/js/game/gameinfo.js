@@ -8,6 +8,7 @@ export const CONTROLLERS = {
   tilt:   "Tilt your phone",
   choice: "Multiple choice",
   race: "Tilt steering + gas/brake",
+  ctf: "Left stick moves · right stick looks · FIRE button above it",
 };
 
 export const GAMES = [
@@ -128,7 +129,23 @@ export const GAMES = [
       tags: ["Racing", "Motion"],
       controller: "race",
       entry: "/js/game/moto-race/main.js",
-    }
+    },
+    {
+      id: "ctf",
+      title: "Capture the Flag",
+      tagline: "Steal their flag. Guard yours.",
+      description: "Two teams, two end rooms, one flag each. Pick RED or BLUE and press A to ready up, then run through the map, grab the enemy flag and bring it back to your own stand. Shoot enemies to slow them down and grab med-kits in the middle room to heal. First team to 3 captures wins. Left stick moves, right stick steers the camera, FIRE sits above it.",
+      cover:  "/assets/games/ctf-cover.svg",
+      banner: "/assets/games/ctf-banner.svg",
+      emoji: "🚩",
+      color: "#e5484d",
+      minPlayers: 2,
+      maxPlayers: 4,
+      rating: 4.5,
+      tags: ["Shooter", "Team", "3D"],
+      controller: "ctf",
+      entry: "/js/game/ctf/main.js",
+    },
 ];
 
 export const getGame = (id) => GAMES.find((g) => g.id === id);
