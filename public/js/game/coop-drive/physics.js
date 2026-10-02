@@ -164,6 +164,106 @@ export function boxHit(a, b) {
   return true;
 }
 
+// Soft car-to-car collision.
+// Cars are pushed apart so they cannot occupy the same space.
+// Normal velocity is removed instead of reflecting it, so there is NO bounce.
+export function resolveCarCollision(a, b, dt) {
+  const boxA = carBox(a);
+  const boxB = carBox(b);
+
+  // Quick distance check.
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+
+  const maxDist = Math.hypot(
+    CAR_HW * 2,
+    CAR_HL * 2
+  );
+
+  if (dx * dx + dz * dz > maxDist * maxDist) {
+    return false;
+  }
+
+  // Proper oriented-box collision test.
+  if (!boxHit(boxA, boxB)) {
+    return false;
+  }
+
+  // Find the smallest-overlap SAT axis.
+  let bestOverlap = Infinity;
+  let nx = 0;
+  let nz = 0;
+
+  const axes = [];
+
+  for (const box of [boxA, boxB]) {
+    const fx = Math.sin(box.h);
+    const fz = Math.cos(box.h);
+
+    // Forward
+    axes.push([fx, fz]);
+
+    // Right
+    axes.push([-fz, fx]);
+  }
+
+  for (const [ax, az] of axes) {
+    const centerDist = Math.abs(dx * ax + dz * az);
+
+    const overlap =
+      ext(boxA, ax, az) +
+      ext(boxB, ax, az) -
+      centerDist;
+
+    if (overlap <= 0) {
+      return false;
+    }
+
+    if (overlap < bestOverlap) {
+      bestOverlap = overlap;
+
+      // Make the normal point from A -> B.
+      const direction = dx * ax + dz * az >= 0 ? 1 : -1;
+
+      nx = ax * direction;
+      nz = az * direction;
+    }
+  }
+
+  // Push the cars apart.
+  // Slightly more than half prevents them remaining embedded.
+  const push = bestOverlap * 0.51;
+
+  a.x -= nx * push;
+  a.z -= nz * push;
+
+  b.x += nx * push;
+  b.z += nz * push;
+
+  // Remove only the velocity that is pushing the cars INTO each other.
+  // We intentionally do NOT reflect the velocity -> no bounce.
+  const rvx = b.vx - a.vx;
+  const rvz = b.vz - a.vz;
+
+  const closing = rvx * nx + rvz * nz;
+
+  if (closing < 0) {
+    const correction = -closing * 0.5;
+
+    a.vx -= nx * correction;
+    a.vz -= nz * correction;
+
+    b.vx += nx * correction;
+    b.vz += nz * correction;
+  }
+
+  // Keep speed values synchronized with the corrected velocity.
+  a.speed = Math.hypot(a.vx, a.vz);
+  b.speed = Math.hypot(b.vx, b.vz);
+
+  return true;
+}
+
 // Fill (or create) the collision box of a car
 export function carBox(car, out = {}) {
   out.x = car.x; out.z = car.z; out.h = car.h; out.hw = CAR_HW; out.hl = CAR_HL;

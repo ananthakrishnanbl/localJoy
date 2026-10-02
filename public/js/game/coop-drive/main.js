@@ -3,13 +3,26 @@
 import * as THREE from "./three.js";
 import { createTrack, HALF, START_S, LANES } from "./track.js";
 import { createCarMesh, disposeCarAssets, CAR_COLORS } from "./car.js";
-import { createCar, stepCar, wreckCar, collideRail, boxHit, carBox, TOP, wrap } from "./physics.js";
+import {
+  createCar,
+  stepCar,
+  wreckCar,
+  collideRail,
+  boxHit,
+  carBox,
+  resolveCarCollision,
+  TOP,
+  wrap
+} from "./physics.js";
+import { createTraffic } from "./traffic.js";
+import { checkFall, startFall, stepFalling } from "./abyss.js";
+
 
 // ---------- constants ----------
 const W = 1280, H = 720;
 const STEP = 1 / 120;               // fixed physics timestep (s)
 const SELECT_TIMEOUT = 60;          // teams that have not locked in by then are locked automatically. Infinity = wait forever
-const COUNTDOWN_TIME = 3, RACE_TIME = 80, END_TIME = 6;
+const COUNTDOWN_TIME = 3, RACE_TIME = 999, END_TIME = 6;
 const LANE_SPEED = { 1: 10, 2: 13 };
 const WRECK_COLOR = 0x2b2b2b;
 
@@ -85,54 +98,14 @@ export function start(ctx) {
   const platformMat = mat(0x232a36);
   const ringGeo = own(new THREE.RingGeometry(3.9, 4.3, 64).rotateX(-Math.PI / 2));
 
-  // ---------- procedural track ----------
+// ---------- procedural track ----------
   const track = createTrack(rng);
   own(track);
   scene.add(track.group);
 
-  // ---------- traffic & obstacles ----------
-  const trafficColors = [0x8a8f98, 0xb5b0a0, 0x6a7fa0, 0xa87c5a, 0x7e9a7e];
-  const barrierGeo = own(new THREE.BoxGeometry(3.2, 1.1, 1)), stripeGeo = own(new THREE.BoxGeometry(3.3, 0.3, 1.05));
-  const rockGeo = own(new THREE.IcosahedronGeometry(1.3, 0));
-  const orangeM = mat(0xe8782a), rockM = mat(0x7a7a7a), stripeM = mat(0xffffff);
-
-  const items = [];
-  const tmpPose = { x: 0, z: 0, h: 0 };
-  function addItem(type, s, d, speed) {
-    let obj, hw, hl;
-    if (type === "traffic") {
-      const car = createCarMesh(trafficColors[Math.floor(rng() * trafficColors.length)]);
-      own(car); obj = car.root; hw = 1; hl = 2.1;
-    } else if (type === "barrier") {
-      obj = new THREE.Group();
-      const b = new THREE.Mesh(barrierGeo, orangeM); b.position.y = 0.55;
-      const w = new THREE.Mesh(stripeGeo, stripeM); w.position.y = 0.7;
-      obj.add(b, w); hw = 1.6; hl = 0.5;
-    } else {
-      obj = new THREE.Mesh(rockGeo, rockM); obj.scale.set(1, 0.8, 1); hw = 1.1; hl = 1.1;
-    }
-    scene.add(obj);
-    const it = { type, s, d, speed, hw, hl, mesh: obj, x: 0, z: 0, h: 0, yaw: type === "rock" ? rng() * 3 : 0 };
-    placeItem(it);
-    items.push(it);
-  }
-  function placeItem(it) {
-    const p = track.sample(it.s, it.d, tmpPose);
-    it.x = p.x; it.z = p.z; it.h = p.h + it.yaw;
-    it.mesh.position.set(it.x, it.type === "rock" ? 0.5 : 0, it.z);
-    it.mesh.rotation.y = it.h;
-  }
-  function addTraffic(s) { const lane = rng() < 0.5 ? 1 : 2; addItem("traffic", s, LANES[lane], LANE_SPEED[lane]); }
-  function addObstacle(s) {
-    const side = rng() < 0.5 ? -1 : 1;
-    if (rng() < 0.5) addItem("barrier", s, side * (6 + rng() * 2), 0);
-    else addItem("rock", s, side * 8, 0);
-  }
-  for (let s = 150; s < 2300; s += 18 + rng() * 28) {
-    const trafficFirst = rng() < 0.55;
-    if (trafficFirst) addTraffic(s); else addObstacle(s);
-    if (rng() < 0.3) { if (trafficFirst) addObstacle(s + rng() * 6); else addTraffic(s + rng() * 6); }
-  }
+  track.applyAtmosphere(scene);
+  const traffic = createTraffic(scene, track, rng);
+  own(traffic);
 
   // ---------- particles ----------
   const debrisGeo = own(new THREE.BoxGeometry(1, 1, 1));
@@ -177,55 +150,185 @@ export function start(ctx) {
   const rects = layout(nTeams);
   const colorOf = (t) => CAR_COLORS[t.colorIdx];
 
-  for (let t = 0; t < nTeams; t++) {
-    const steer = roster[t * 2], pedal = roster[t * 2 + 1];
-    const p = track.sample(START_S, (t - (nTeams - 1) / 2) * 5);
-    const car = createCar(p.x, p.z, p.h);
-    const mesh = createCarMesh(CAR_COLORS[t].hex);
-    own(mesh);
-    scene.add(mesh.root);
+  // ---------- RANDOM TEAM / ROLE ASSIGNMENT ----------
 
-    // showroom: a turntable with this team's car on it
-    const sx = t * SHOW_GAP;
-    const platform = new THREE.Mesh(platformGeo, platformMat);
-    platform.position.set(sx, -0.15, 0);
-    showScene.add(platform);
-    const ringMat = basic(0xffffff);
-    ringMat.side = THREE.DoubleSide;
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.set(sx, 0.03, 0);
-    showScene.add(ring);
-    const showMesh = createCarMesh(CAR_COLORS[t].hex);
-    own(showMesh);
-    showMesh.root.position.set(sx, 0, 0);
-    showMesh.root.rotation.y = 0.6;
-    showScene.add(showMesh.root);
+// Make a shuffled copy of the players.
+// This means player slots are NOT always assigned in the same order.
+const shuffledRoster = roster.slice();
 
-    const [, , rw, rh] = rects[t];
-    const cam = new THREE.PerspectiveCamera(62, rw / rh, 0.5, 400);
-    const showCam = new THREE.PerspectiveCamera(40, rw / rh, 0.5, 200);
-    showCam.position.set(sx + 7.5, 3.4, 9.5);
-    showCam.lookAt(sx, 0.9, 0);
+for (let i = shuffledRoster.length - 1; i > 0; i--) {
+  const j = Math.floor(rng() * (i + 1));
+  [shuffledRoster[i], shuffledRoster[j]] =
+    [shuffledRoster[j], shuffledRoster[i]];
+}
 
-    const team = {
-      id: t, steer: steer.slot, pedal: pedal.slot,
-      car, mesh, showMesh, ringMat,
-      cam, showCam, camH: p.h, camInit: false, look: new THREE.Vector3(),
-      rect: rects[t],
-      input: { steer: 0, gas: false, brake: false },
-      drive: { steer: 0, gas: false, brake: false },     // what the physics actually sees
-      box: carBox(car),
-      loc: track.makeLoc(START_S),
-      colorIdx: t, locked: false, dropped: false, steerPrev: 0, gasPrev: false,
-      sparkT: 0, dist: 0, reason: "",
-    };
-    roles.set(steer.slot, { team: t, role: "steer" });
-    roles.set(pedal.slot, { team: t, role: "pedal" });
-    teams.push(team);
+// Each team gets exactly 2 players.
+// One becomes STEER and the other becomes PEDAL.
+// The choice is randomized for every team.
+for (let t = 0; t < nTeams; t++) {
 
-    sendRole(steer.slot, "steer");
-    sendRole(pedal.slot, "pedal");
+  const p1 = shuffledRoster[t * 2];
+  const p2 = shuffledRoster[t * 2 + 1];
+
+  // Randomly decide which player gets which controller.
+  let steer;
+  let pedal;
+
+  if (rng() < 0.5) {
+    steer = p1;
+    pedal = p2;
+  } else {
+    steer = p2;
+    pedal = p1;
   }
+
+  const p = track.sample(
+    START_S,
+    (t - (nTeams - 1) / 2) * 5
+  );
+
+  const car = createCar(p.x, p.z, p.h);
+
+  const mesh = createCarMesh(CAR_COLORS[t].hex);
+  own(mesh);
+  scene.add(mesh.root);
+
+  // showroom: a turntable with this team's car on it
+  const sx = t * SHOW_GAP;
+
+  const platform = new THREE.Mesh(
+    platformGeo,
+    platformMat
+  );
+
+  platform.position.set(sx, -0.15, 0);
+  showScene.add(platform);
+
+  const ringMat = basic(0xffffff);
+  ringMat.side = THREE.DoubleSide;
+
+  const ring = new THREE.Mesh(
+    ringGeo,
+    ringMat
+  );
+
+  ring.position.set(sx, 0.03, 0);
+  showScene.add(ring);
+
+  const showMesh = createCarMesh(CAR_COLORS[t].hex);
+  own(showMesh);
+
+  showMesh.root.position.set(sx, 0, 0);
+  showMesh.root.rotation.y = 0.6;
+  showScene.add(showMesh.root);
+
+  const [, , rw, rh] = rects[t];
+
+  const cam = new THREE.PerspectiveCamera(
+    62,
+    rw / rh,
+    0.5,
+    400
+  );
+
+  const showCam = new THREE.PerspectiveCamera(
+    40,
+    rw / rh,
+    0.5,
+    200
+  );
+
+  showCam.position.set(
+    sx + 7.5,
+    3.4,
+    9.5
+  );
+
+  showCam.lookAt(
+    sx,
+    0.9,
+    0
+  );
+
+  const team = {
+    id: t,
+
+    // Randomly assigned players
+    steer: steer.slot,
+    pedal: pedal.slot,
+
+    car,
+    mesh,
+    showMesh,
+    ringMat,
+
+    cam,
+    showCam,
+
+    camH: p.h,
+    camInit: false,
+    look: new THREE.Vector3(),
+
+    rect: rects[t],
+
+    input: {
+      steer: 0,
+      gas: false,
+      brake: false
+    },
+
+    drive: {
+      steer: 0,
+      gas: false,
+      brake: false
+    },
+
+    box: carBox(car),
+    loc: track.makeLoc(START_S),
+
+    colorIdx: t,
+
+    locked: false,
+    dropped: false,
+
+    steerPrev: 0,
+    gasPrev: false,
+
+    sparkT: 0,
+    dist: 0,
+    reason: ""
+  };
+
+  // Assign the randomized roles
+  roles.set(
+    steer.slot,
+    {
+      team: t,
+      role: "steer"
+    }
+  );
+
+  roles.set(
+    pedal.slot,
+    {
+      team: t,
+      role: "pedal"
+    }
+  );
+
+  teams.push(team);
+
+  // Tell each controller its randomized role
+  sendRole(steer.slot, "steer");
+  sendRole(pedal.slot, "pedal");
+}
+
+// Anyone left over becomes spectator
+for (const p of roster) {
+  if (!roles.has(p.slot)) {
+    sendHud(p.slot, "SPECTATING");
+  }
+}
   for (const p of roster) if (!roles.has(p.slot)) sendHud(p.slot, "SPECTATING");
 
   // ---------- HUD overlay (drawn to a 2D canvas, shown as a texture on the same WebGL canvas) ----------
@@ -364,48 +467,70 @@ export function start(ctx) {
   const bestByDistance = () => teams.reduce((b, t) => (t.dist > teams[b].dist ? t.id : b), 0);
 
   // ---------- fixed-step simulation ----------
-  function stepTeam(t, dt, racing) {
+function stepTeam(t, dt, racing) {
     const c = t.car, d = t.drive;
     d.steer = racing ? t.input.steer : 0;
     d.gas = racing && t.input.gas;
     d.brake = racing && t.input.brake;
-    stepCar(c, d, dt);
 
-    const loc = track.locate(c.x, c.z, t.loc);
-    t.dist = Math.max(t.dist, loc.progress - START_S);
-    if (!racing || !c.alive) return;
+    if (c.falling) {
+      if (stepFalling(c, dt)) t.dropped = true; // deep enough: hide it / stop its camera
+    } else {
+      stepCar(c, d, dt);
+      const loc = track.locate(c.x, c.z, t.loc);
+      
+      if (!racing || !c.alive) return;
 
-    // guard rails
-    const hit = collideRail(c, loc.cx, loc.cz, loc.h, HALF, dt);
-    if (hit) {
-      if (hit.fatal) { crash(t, "Hit the barrier"); return; }
-      if (hit.vn > 3 && c.bump <= 0) { vib(t.steer, 40); vib(t.pedal, 40); c.bump = 0.4; }
-      t.sparkT -= dt;
-      if (t.sparkT <= 0) { t.sparkT = 1 / 60; burst(c.x + hit.nx, 0.5, c.z + hit.nz, 2, [sparkM], 6, 0.35, 0.15); }
-    }
+      // Check if they fell off the edge
+      const side = checkFall(c, track, loc);
+      if (side) {
+        startFall(c, side);
+        crash(t, "Fell into the void!", false);
+      }
 
-    // obstacles & traffic
-    const box = carBox(c, t.box);
-    for (const it of items) {
-      const dx = it.x - c.x, dz = it.z - c.z;
-      if (dx * dx + dz * dz < 64 && boxHit(box, it)) {
-        crash(t, it.type === "traffic" ? "Hit a car" : "Hit an obstacle");
-        return;
+      // Check Traffic collisions
+      if (c.alive) {
+        const box = carBox(c, t.box);
+        for (const tc of traffic.cars) {
+          if (Math.abs(tc.s - loc.progress) < 10 && boxHit(box, tc.box)) { 
+            crash(t, "Hit a car"); 
+            break; 
+          }
+        }
       }
     }
+
+    if (c.alive) t.dist = Math.max(t.dist, t.loc.progress - START_S);
   }
 
-  function checkEnd(dt) {
+
+
+function checkEnd(dt) {
     const alive = teams.filter((t) => t.car.alive);
     const over = nTeams === 1 ? alive.length === 0 : alive.length <= 1;
-    if (over && pendingEnd < 0) pendingEnd = 1.2;
+    
+    // Check if any team has crossed the 1000m mark
+    const finishLine = 2000;
+    const crossedFinish = teams.find((t) => t.dist >= finishLine);
+
+    if ((over || crossedFinish) && pendingEnd < 0) {
+      pendingEnd = 1.2;
+    }
+
     if (pendingEnd >= 0) {
       pendingEnd -= dt;
       if (pendingEnd <= 0) {
-        if (nTeams > 1 && alive.length === 1) endRace(alive[0].id); else endRace(bestByDistance());
+        if (crossedFinish) {
+          endRace(crossedFinish.id); // The first team to cross wins
+        } else if (nTeams > 1 && alive.length === 1) {
+          endRace(alive[0].id); // Last team alive wins
+        } else {
+          endRace(bestByDistance());
+        }
         return;
       }
     }
+    
     if (raceT <= 0) { raceT = 0; endRace(bestByDistance()); }
   }
 
@@ -430,9 +555,42 @@ export function start(ctx) {
     } else if (phase === "race") {
       raceT -= dt;
     }
-    if (phase === "race" || phase === "end") for (const it of items) if (it.speed) { it.s += it.speed * dt; placeItem(it); }
+    if (phase === "race" || phase === "end") {
+      const raceTimeElapsed = phase === "race" ? (RACE_TIME - raceT) : RACE_TIME;
+      traffic.update(dt, raceTimeElapsed, teams.map(t => ({
+        progress: t.loc.progress,
+        d: track.lateral(t.car.x, t.car.z, t.loc),
+        alive: t.car.alive,
+      })));
+    }
     for (const t of teams) stepTeam(t, dt, phase === "race");
-    stepParts(dt);
+
+// Player vs player collisions.
+// Do this AFTER every car has moved for this physics step.
+if (phase === "race") {
+  for (let i = 0; i < teams.length; i++) {
+    const a = teams[i].car;
+    if (!a.alive) continue;
+
+    for (let j = i + 1; j < teams.length; j++) {
+      const b = teams[j].car;
+      if (!b.alive) continue;
+
+      resolveCarCollision(a, b, dt);
+    }
+  }
+
+  // Update boxes/locations after collision correction.
+  for (const t of teams) {
+    if (!t.car.alive) continue;
+
+    t.box = carBox(t.car, t.box);
+    track.locate(t.car.x, t.car.z, t.loc);
+  }
+}
+
+stepParts(dt);
+
     if (phase === "race") checkEnd(dt);
     else if (phase === "end") {
       endT -= dt;
@@ -474,8 +632,10 @@ export function start(ctx) {
     else text("STEER: \u25C0 \u25B6 pick   PEDALS: GAS to lock in", cx, y + h - 36, 19, "#fff", "center");
   }
 
-  function drawHud() {
+function drawHud() {
     g2.clearRect(0, 0, W, H);
+    
+    // --- ABORT PHASE ---
     if (phase === "abort") {
       g2.fillStyle = "rgba(0,0,0,0.85)"; g2.fillRect(0, 0, W, H);
       text("CO-OP HIGHWAY", W / 2, H / 2 - 40, 64, "#ffc233", "center");
@@ -483,6 +643,7 @@ export function start(ctx) {
       return;
     }
 
+    // --- SELECT PHASE ---
     if (phase === "select") {
       for (const t of teams) drawSelectTeam(t);
       g2.fillStyle = "rgba(0,0,0,0.6)"; g2.fillRect(W / 2 - 190, 8, 380, 76);
@@ -492,36 +653,144 @@ export function start(ctx) {
       return;
     }
 
-    for (const t of teams) {
-      const [x, y, w, h] = t.rect, c = t.car, css = colorOf(t).css;
-      if (nTeams > 1) { g2.strokeStyle = css; g2.lineWidth = 6; g2.strokeRect(x + 3, y + 3, w - 6, h - 6); }
-      g2.fillStyle = "rgba(0,0,0,0.45)"; g2.fillRect(x + 12, y + 12, 300, 86);
-      text("TEAM " + (t.id + 1), x + 22, y + 28, 24, css);
-      text("STEER  " + nm(t.steer), x + 22, y + 54, 19);
-      text("PEDALS " + nm(t.pedal), x + 22, y + 78, 19);
-      g2.fillStyle = "rgba(0,0,0,0.45)"; g2.fillRect(x + w / 2 - 150, y + h - 86, 300, 74);
-      text(String(Math.round(c.speed * 3.6)), x + w / 2 - 20, y + h - 52, 52, "#fff", "right");
-      text("km/h", x + w / 2 - 10, y + h - 44, 22, "#ddd");
-      text(Math.round(t.dist) + " m", x + w / 2, y + h - 22, 22, css, "center");
-      if (!c.alive) {
-        text("CRASHED!", x + w / 2, y + h / 2 - 10, nTeams > 2 ? 48 : 72, "#ff5252", "center");
-        if (t.reason) text(t.reason, x + w / 2, y + h / 2 + 40, 24, "#fff", "center");
-      }
+// --- RACE / END PHASE: PER-TEAM HUD ---
+const timeElapsed = Math.min(
+  999,
+  Math.max(0, Math.floor(RACE_TIME - raceT))
+);
+
+for (const t of teams) {
+  const [x, y, w, h] = t.rect;
+  const c = t.car;
+  const css = colorOf(t).css;
+
+  // Team screen border
+  if (nTeams > 1) {
+    g2.strokeStyle = css;
+    g2.lineWidth = 6;
+    g2.strokeRect(x + 3, y + 3, w - 6, h - 6);
+  }
+
+  // ------------------------------------------------
+  // TOP-LEFT: TEAM INFORMATION
+  // ------------------------------------------------
+  g2.fillStyle = "rgba(0,0,0,0.45)";
+  g2.fillRect(x + 12, y + 12, 300, 86);
+
+  text(
+    "TEAM " + (t.id + 1),
+    x + 22,
+    y + 28,
+    24,
+    css
+  );
+
+  text(
+    "STEER  " + nm(t.steer),
+    x + 22,
+    y + 54,
+    19
+  );
+
+  text(
+    "PEDALS " + nm(t.pedal),
+    x + 22,
+    y + 78,
+    19
+  );
+
+  // ------------------------------------------------
+  // TOP-CENTER: THIS TEAM'S TIMER + DISTANCE
+  // ------------------------------------------------
+  const hudW = Math.min(260, w - 24);
+  const hudX = x + (w - hudW) / 2;
+
+  g2.fillStyle = "rgba(0,0,0,0.60)";
+  g2.fillRect(hudX, y + 12, hudW, 86);
+
+  // Race timer
+  text(
+    timeElapsed + "s",
+    x + w / 2,
+    y + 38,
+    36,
+    "#fff",
+    "center"
+  );
+
+  // THIS TEAM'S distance
+  text(
+    Math.round(t.dist) + " m",
+    x + w / 2,
+    y + 76,
+    23,
+    "#ffc233",
+    "center"
+  );
+
+  // ------------------------------------------------
+  // BOTTOM-RIGHT: SPEEDOMETER
+  // ------------------------------------------------
+  g2.fillStyle = "rgba(0,0,0,0.45)";
+  g2.fillRect(
+    x + w / 2 - 150,
+    y + h - 86,
+    300,
+    74
+  );
+
+  text(
+    String(Math.round(c.speed * 3.6)),
+    x + w / 2 - 20,
+    y + h - 52,
+    52,
+    "#fff",
+    "right"
+  );
+
+  text(
+    "km/h",
+    x + w / 2 - 10,
+    y + h - 44,
+    22,
+    "#ddd"
+  );
+
+  // ------------------------------------------------
+  // CRASHED MESSAGE
+  // ------------------------------------------------
+  if (!c.alive) {
+    text(
+      "CRASHED!",
+      x + w / 2,
+      y + h / 2 - 10,
+      nTeams > 2 ? 48 : 72,
+      "#ff5252",
+      "center"
+    );
+
+    if (t.reason) {
+      text(
+        t.reason,
+        x + w / 2,
+        y + h / 2 + 40,
+        24,
+        "#fff",
+        "center"
+      );
     }
-    g2.fillStyle = "rgba(0,0,0,0.6)"; g2.fillRect(W / 2 - 80, 8, 160, 54);
-    text(String(Math.max(0, Math.ceil(raceT))) + "s", W / 2, 36, 40, raceT <= 10 ? "#ff6b6b" : "#fff", "center");
-    if (nTeams > 1) {
-      const cw = 150, x0 = W / 2 - (nTeams * cw) / 2;
-      teams.forEach((t, i) => {
-        g2.fillStyle = "rgba(0,0,0,0.55)"; g2.fillRect(x0 + i * cw + 2, 66, cw - 4, 28);
-        g2.fillStyle = colorOf(t).css; g2.fillRect(x0 + i * cw + 2, 66, 8, 28);
-        text("T" + (i + 1) + " " + Math.round(t.dist) + "m" + (t.car.alive ? "" : " X"), x0 + i * cw + 18, 81, 18);
-      });
-    }
+  }
+}
+
+
+    
+    // --- COUNTDOWN OVERLAY ---
     if (phase === "countdown") {
       text("GET READY", W / 2, H / 2 - 50, 72, "#fff", "center");
       text(String(Math.max(1, Math.ceil(countdownT))), W / 2, H / 2 + 40, 110, "#ffc233", "center");
     }
+    
+    // --- END PHASE OVERLAY ---
     if (phase === "end" && result) {
       g2.fillStyle = "rgba(0,0,0,0.6)"; g2.fillRect(0, H / 2 - 130, W, 260);
       if (result.winner >= 0) {
@@ -548,7 +817,7 @@ export function start(ctx) {
     const sf = Math.sin(t.camH), cf = Math.cos(t.camH);
     const back = 9.5 + Math.min(c.speed, TOP) * 0.05;          // pulls back a little with speed
     const tx = c.x - sf * back, ty = 4.6, tz = c.z - cf * back;
-    const lx = c.alive ? c.x + sf * 7 : c.x, ly = c.alive ? 1.2 : 1, lz = c.alive ? c.z + cf * 7 : c.z;
+    const lx = c.alive ? c.x + sf * 7 : c.x, ly = c.y + 1, lz = c.alive ? c.z + cf * 7 : c.z;
     const fov = 60 + Math.min(c.speed, TOP) * 0.35;
 
     if (snap) {
@@ -587,7 +856,7 @@ export function start(ctx) {
       for (const t of teams) {
         const c = t.car, r = t.mesh.root;
         r.position.set(c.x, c.y, c.z);
-        r.rotation.y = c.h; r.rotation.z = c.roll;
+        r.rotation.y = c.h; r.rotation.z = c.roll; r.rotation.x = c.pitch || 0;
       }
       for (const t of teams) {
         updateChaseCam(t, dt);
