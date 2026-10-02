@@ -601,8 +601,6 @@ onMessage(msg) { if (msg.type === "prompt") { /* update UI */ } }
 - The player's colour is available as the CSS variable `--player`.
 - Put CSS in a `<style>` you add in `mount()` and remove in `destroy()`, and prefix class names.
 
-> **Note:** `hand` ("Private hand of cards") is listed in `CONTROLLERS` in `gameinfo.js` but no pad is registered under that name yet. To use it, create and register `js/pad/hand.js` (steps A to C) first, otherwise phones fall back to the joystick pad.
-
 <p align="right"><a href="#developer-guide">⬆ back to tabs</a></p>
 
 </details>
