@@ -3,11 +3,13 @@
 //                { type: "move", x, y }, { type: "button", id, pressed }
 //                stick left / right = pick a team, A = ready, B = not ready
 //   play mode    MOVE stick + drag-to-look + FIRE + RELOAD:
-//                { type: "ctf", mx, my, lookX, lookY, rl, sid, fire }
+//                { type: "ctf", mx, my, lookX, lookY, rl, sw, pk, sid, fire }
 //                  bottom LEFT    MOVE stick  (my: -1 = forward, mx: 1 = strafe right)
 //                  RIGHT HALF     drag anywhere to turn the camera (like most mobile shooters)
 //                  bottom RIGHT   FIRE (big) and RELOAD (shows your ammo)
 //                  top LEFT       a second FIRE, for when the right thumb is busy looking
+//                  top MIDDLE     small circular SWAP & PICK buttons (out of the way, easy to reach)
+//   sw / pk are running counts of SWAP / PICK taps (same idea as rl).
 //
 //   lookX / lookY are running TOTALS of how far the finger has dragged (in "screen heights"),
 //   and rl is a running count of reload taps. The game works out the difference since the last
@@ -18,6 +20,7 @@
 //   { type: "ctf-mode", mode: "select" | "play" }
 //   { type: "ctf-ammo", ammo, max, reloading, time, left }   keeps the ammo counter / reload ring up to date
 //   { type: "ctf-hit", ang }                                  you were shot (red flash + little shake)
+//   { type: "ctf-gun", cur, other, near }                     gun names: SWAP shows `other`, PICK lights up when `near` is set
 //
 // The play layout is built with its own inline styles (like race.js) so it never moves or resizes
 // when something is pressed. Drag maths handles the phone being held upright (see `turned`).
@@ -36,16 +39,17 @@ export default {
     let mode = "select";
     let parts = [];                                   // widgets of the current layout, so they can be released
     const sid = Math.random().toString(36).slice(2, 8);
-    const st = { mx: 0, my: 0, lookX: 0, lookY: 0, rl: 0, fire: false };
+    const st = { mx: 0, my: 0, lookX: 0, lookY: 0, rl: 0, sw: 0, pk: 0, fire: false };
+    let gunInfo = { cur: "", other: "", near: "" }, swapUI = null, pickUI = null;
     let last = "", lastSent = 0;
 
     // ammo state, kept here so a rebuilt layout can show it straight away
     let ammo = { n: 50, max: 50, reloading: false, time: 1.8, t0: 0 };
     let reloadUI = null, fx = null, shakeTarget = null, raf = 0;
 
-    const post = () => io.send({ type: "ctf", mx: st.mx, my: st.my, lookX: st.lookX, lookY: st.lookY, rl: st.rl, sid, fire: st.fire });
+    const post = () => io.send({ type: "ctf", mx: st.mx, my: st.my, lookX: st.lookX, lookY: st.lookY, rl: st.rl, sw: st.sw, pk: st.pk, sid, fire: st.fire });
     function send(force = false) {
-      const key = `${st.mx}|${st.my}|${st.lookX}|${st.lookY}|${st.rl}|${+st.fire}`;
+      const key = `${st.mx}|${st.my}|${st.lookX}|${st.lookY}|${st.rl}|${st.sw}|${st.pk}|${+st.fire}`;
       const now = performance.now();
       if (key === last || (!force && now - lastSent < 30)) return;
       last = key; lastSent = now;
@@ -223,6 +227,45 @@ export default {
       return { el: b, count, label, release: () => set(false) };
     }
 
+    /* ---------- SWAP / PICK: small circular buttons ---------- */
+    function circleTapButton(title, counter, colors) {
+      const b = el("div", "");
+      css(b, {
+        height: "100%", aspectRatio: "1 / 1", flex: "0 0 auto", borderRadius: "50%", boxSizing: "border-box",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        background: colors.bg, color: colors.fg, border: "3px solid rgba(255,255,255,.55)", boxShadow: "0 4px 0 rgba(0,0,0,.25)",
+        touchAction: "none", userSelect: "none", webkitUserSelect: "none", cursor: "pointer", transition: "opacity .2s, background .2s",
+      });
+      const t = el("div", "", title);
+      css(t, { font: "700 11px/1 Fredoka, system-ui, sans-serif", letterSpacing: ".06em", pointerEvents: "none" });
+      const sub = el("div", "");
+      css(sub, { font: "600 7px/1 Fredoka, system-ui, sans-serif", letterSpacing: ".04em", pointerEvents: "none", opacity: ".85", whiteSpace: "nowrap", overflow: "hidden", maxWidth: "90%", marginTop: "2px" });
+      b.append(t, sub);
+
+      let down = false;
+      const set = (v) => {
+        if (v === down) return;
+        down = v;
+        b.style.transform = v ? "translateY(3px)" : "none";
+        b.style.boxShadow = v ? "0 1px 0 rgba(0,0,0,.25)" : "0 4px 0 rgba(0,0,0,.25)";
+        if (v) { st[counter]++; send(true); navigator.vibrate?.(12); }
+      };
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); set(true); });
+      for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(ev, () => set(false));
+      b.addEventListener("contextmenu", (e) => e.preventDefault());
+      return { el: b, sub, release: () => set(false) };
+    }
+
+    function paintGuns() {
+      if (swapUI) swapUI.sub.textContent = gunInfo.other ? gunInfo.other : "";
+      if (pickUI) {
+        const on = !!gunInfo.near;
+        pickUI.sub.textContent = on ? gunInfo.near : "";
+        pickUI.el.style.opacity = on ? "1" : ".45";
+        pickUI.el.style.background = on ? "radial-gradient(circle at 35% 30%, #ffe7a0, #ffc23d 65%, #d99a10)" : RING_BG;
+      }
+    }
+
     function paintAmmo() {
       cancelAnimationFrame(raf);
       if (!reloadUI) return;
@@ -263,7 +306,7 @@ export default {
       cancelAnimationFrame(raf);
       parts.forEach((p) => p.release?.());
       parts = [];
-      reloadUI = null; fx = null; shakeTarget = null;
+      reloadUI = null; fx = null; shakeTarget = null; swapUI = null; pickUI = null;
       root.replaceChildren();
 
       if (mode === "play") {
@@ -305,6 +348,20 @@ export default {
           parts.push(fire2);
           layout.append(fire2.el);
         }
+
+        // top-middle: small circular SWAP + PICK buttons
+        const gunRow = el("div", "");
+        css(gunRow, {
+          position: "absolute", left: "50%", transform: "translateX(-50%)", top: "5%",
+          height: "22%", display: "flex", gap: "12px", alignItems: "center", justifyContent: "center",
+          zIndex: "2",
+        });
+        swapUI = circleTapButton("SWAP", "sw", { bg: "radial-gradient(circle at 35% 30%, #a9d8ff, #3b8bff 65%, #2563c9)", fg: "#fff" });
+        pickUI = circleTapButton("PICK", "pk", { bg: RING_BG, fg: "#10202b" });
+        gunRow.append(swapUI.el, pickUI.el);
+        parts.push(swapUI, pickUI);
+        layout.append(gunRow);
+        paintGuns();
 
         // red flash around the edges when you get shot (never blocks touches)
         fx = el("div", "");
@@ -348,11 +405,12 @@ export default {
           return;
         }
         if (msg.type === "ctf-hit") { hitEffect(); return; }
+        if (msg.type === "ctf-gun") { gunInfo = { cur: msg.cur || "", other: msg.other || "", near: msg.near || "" }; paintGuns(); return; }
         if (msg.type !== "ctf-mode") return;
         const next = msg.mode === "play" ? "play" : "select";
         if (next === mode) return;
         mode = next;
-        st.mx = st.my = 0; st.fire = false; holds.clear(); last = "";   // lookX / lookY / rl keep counting: they are running totals
+        st.mx = st.my = 0; st.fire = false; holds.clear(); last = "";   // lookX / lookY / rl / sw / pk keep counting: they are running totals
         build();
       },
     };
