@@ -1,18 +1,9 @@
-// NEON VOID: a narrow bridge floating in an endless dark abyss.
-//  - no ground, no guard rails: leave the road and you fall (see abyss.js)
-//  - sudden hairpins / chicanes that get tighter further down the road
-//  - road width fluctuates and squeezes down to two lanes or a single lane
-//  - neon edge lines turn from cyan/magenta to hot orange as the road narrows (a warning for the team)
-//
-// Road space: the road is sampled every L metres. Offset d is measured sideways from the centreline
-// along (-cos h, sin h), where h is the road heading at that sample (forward = (sin h, cos h)).
 import * as THREE from "./three.js";
 
-export const L = 4;                  // segment length (m)
-export const N = 900;                // number of segments
-export const HALF = 10;              // WIDEST half-width. The real width varies: use halfAt(s) / loc.half
-export const START_S = 48;           // distance along the road where the cars start
-export const LANES = [-7.5, -2.5, 2.5, 7.5];   // lane centres on the full-width road only; use lanesAt(s)
+export const L = 4;                 
+export const N = 900;                
+export const HALF = 10;              
+export const START_S = 48;           
 export const VOID_COLOR = 0x03000a;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -22,16 +13,14 @@ const mix = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b
 
 const CYAN = [0.1, 0.95, 1], MAGENTA = [1, 0.2, 0.85], ORANGE = [1, 0.35, 0.05];
 
-// rng: a () => [0,1) function. Used for the curves, the chokepoints and the void dust.
 export function createTrack(rng) {
   const disposables = [];
   const own = (o) => { disposables.push(o); return o; };
   const group = new THREE.Group();
   const MAXS = (N - 1) * L;
 
-  /* ---------- 1. Curvature: straights broken up by sudden sharp corners ---------- */
   const curvRaw = new Float32Array(N);
-  const straights = [];                       // [s0, s1] pieces of dead-straight road
+  const straights = [];                       
   {
     let s = 140, h = 0, flip = rng() < 0.5 ? 1 : -1;
     const arc = (len, k) => {
@@ -41,20 +30,20 @@ export function createTrack(rng) {
     };
     while (s < MAXS - 80) {
       const prog = s / MAXS;
-      const sl = lerp(110, 38, prog) * (0.6 + rng() * 0.8);     // straights get shorter
+      const sl = lerp(110, 38, prog) * (0.6 + rng() * 0.8);     
       straights.push([s, s + sl]); s += sl;
-      const R = lerp(34, 17, prog) * (0.8 + rng() * 0.5);        // corner radius shrinks over the run
+      const R = lerp(34, 17, prog) * (0.8 + rng() * 0.5);       
       const kind = rng();
       const th = kind < 0.3 ? 0.6 + rng() * 0.5 : kind < 0.55 ? 2.1 + rng() * 0.8 : 1.2 + rng() * 0.8;
-      let sign = rng() < 0.65 ? -flip : flip;                    // mostly alternate, sometimes repeat
-      const net = kind < 0.3 ? 0 : th;                           // a chicane turns the road by nothing overall
-      if (Math.abs(h + sign * net) > 1.9) sign = -Math.sign(h) || sign;   // never wander back on ourselves
+      let sign = rng() < 0.65 ? -flip : flip;                    
+      const net = kind < 0.3 ? 0 : th;                           
+      if (Math.abs(h + sign * net) > 1.9) sign = -Math.sign(h) || sign;   
       flip = sign;
-      if (kind < 0.3) { arc(R * th, sign / R); arc(R * th, -sign / R); }   // chicane
-      else arc(R * th, sign / R);                                          // sharp corner / hairpin
+      if (kind < 0.3) { arc(R * th, sign / R); arc(R * th, -sign / R); }   
+      else arc(R * th, sign / R);                                          
     }
   }
-  // soften the curvature steps over about +-8 m so the road itself has no kinks (area is preserved)
+
   const curv = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     let sum = 0;
@@ -62,7 +51,6 @@ export function createTrack(rng) {
     curv[i] = sum / 5;
   }
 
-  /* ---------- 2. Width: gentle breathing plus chokepoints on the straights ---------- */
   const half = new Float32Array(N);
   {
     const hp = rng() * 6.28;
@@ -72,7 +60,7 @@ export function createTrack(rng) {
     for (const [a, b] of straights) {
       if (b - a < 80 || a < 230 || rng() > 0.6) continue;
       const hold = clamp(b - a - 44, 16, 60), c = (a + b) / 2;
-      const target = (a > 600 && rng() < 0.45) ? 2.7 : 5.2;      // one lane (late) or two lanes
+      const target = (a > 600 && rng() < 0.45) ? 2.7 : 5.2;      
       for (let i = 0; i < N; i++) {
         const x = Math.abs(i * L - c);
         const f = x <= hold / 2 ? 1 : x >= hold / 2 + RAMP ? 0 : 1 - smooth((x - hold / 2) / RAMP);
@@ -81,7 +69,6 @@ export function createTrack(rng) {
     }
   }
 
-  /* ---------- 3. Centreline: integrate the heading ---------- */
   const px = new Float32Array(N), pz = new Float32Array(N), hd = new Float32Array(N);
   {
     let x = 0, z = 0, h = 0;
@@ -108,15 +95,13 @@ export function createTrack(rng) {
     const i = Math.floor(s / L), f = (s - i * L) / L;
     return lerp(half[i], half[i + 1], f);
   }
-  // Lane centres that fit the road at distance s (4 lanes wide open, 1 lane in the tightest squeeze)
+
   function lanesAt(s) {
     const n = clamp(Math.round(halfAt(s) * 2 / 5), 1, 4);
     return Array.from({ length: n }, (_, k) => (k - (n - 1) / 2) * 5);
   }
 
-  /* ---------- 4. Meshes ---------- */
   const dd = (d, i) => (typeof d === "function" ? d(i) : d);
-  // d0/d1 may be numbers or (i) => number. colorFn (optional) gives per-sample [r,g,b].
   function strip(d0, y0, d1, y1, m, skip, colorFn) {
     const a = [], col = [];
     for (let i = 0; i < N - 1; i++) {
@@ -139,7 +124,6 @@ export function createTrack(rng) {
   const lit = (c, o = {}) => own(new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide, ...o }));
   const basic = (c) => own(new THREE.MeshBasicMaterial({ color: c }));
 
-  // the bridge: dark deck with a visible slab edge underneath
   const hl = (i) => half[i], hr = (i) => -half[i];
   strip(hr, 0, hl, 0, lit(0x16161f, { emissive: 0x08080e }));
   const slab = lit(0x0b0b18, { emissive: 0x04040a });
@@ -147,13 +131,11 @@ export function createTrack(rng) {
   strip(hr, 0, hr, -0.9, slab);
   strip(hr, -0.9, hl, -0.9, slab);
 
-  // lane markings (only where the road is wide enough to have them)
   const white = basic(0xcfd8ff);
   strip(-0.12, 0.04, 0.12, 0.04, white, (i) => i % 2 === 1 || half[i] < 4);
   for (const d of [-5, 5]) strip(d - 0.12, 0.04, d + 0.12, 0.04, white, (i) => i % 2 === 1 || half[i] < 6.4);
-  strip(hr, 0.05, hl, 0.05, white, (i) => i !== 11);                                  // start line
+  strip(hr, 0.05, hl, 0.05, white, (i) => i !== 11);
 
-  // neon edges + soft additive glow. Colour shifts to orange as the road narrows.
   const danger = (i) => clamp((8.6 - half[i]) / 4, 0, 1);
   const colL = (i) => mix(CYAN, ORANGE, danger(i));
   const colR = (i) => mix(MAGENTA, ORANGE, danger(i));
@@ -167,7 +149,17 @@ export function createTrack(rng) {
     strip((i) => sgn * (half[i] - 0.7), 0.07, (i) => sgn * (half[i] + 0.7), 0.07, glow, null, colFn);
   }
 
-  // drifting dust in the void: a speed and depth cue
+  // Visual Finish Line Mesh added at 2000m
+  const finLoc = sample(START_S + 2000, 0);
+  const finW = halfAt(START_S + 2000) * 2.2;
+  const finishGeo = own(new THREE.PlaneGeometry(finW, 2));
+  const finishMat = own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const finishMesh = new THREE.Mesh(finishGeo, finishMat);
+  finishMesh.rotation.x = -Math.PI / 2;
+  finishMesh.rotation.z = finLoc.h;
+  finishMesh.position.set(finLoc.x, 0.03, finLoc.z);
+  group.add(finishMesh);
+
   {
     const cnt = 1400, pos = new Float32Array(cnt * 3), colr = new Float32Array(cnt * 3), tmp = {};
     for (let k = 0; k < cnt; k++) {
@@ -186,11 +178,6 @@ export function createTrack(rng) {
     group.add(pts);
   }
 
-  /* ---------- 5. Queries ---------- */
-  // A locator remembers which sample a car was last near, so the next search is cheap.
-  //   idx       nearest centreline sample      h         road heading there
-  //   cx, cz    that sample's position         progress  distance travelled along the road (m)
-  //   half      half-width of the road there
   const makeLoc = (s = 0) => ({ idx: Math.floor(s / L), h: 0, cx: 0, cz: 0, progress: s, half: HALF });
 
   function locate(x, z, loc) {
@@ -209,27 +196,15 @@ export function createTrack(rng) {
     return loc;
   }
 
-  // Signed sideways distance of a point from the road centre (positive = right). Uses a located `loc`.
   const lateral = (x, z, loc) => (x - loc.cx) * -Math.cos(loc.h) + (z - loc.cz) * Math.sin(loc.h);
 
-  // Call once: black void background and fog. Lights are up to main.js (a dim hemisphere light is plenty).
   function applyAtmosphere(scene) {
     scene.background = new THREE.Color(VOID_COLOR);
     scene.fog = new THREE.Fog(VOID_COLOR, 50, 260);
   }
 
   return {
-    group,
-    length: MAXS,
-    sample,
-    halfAt,
-    lanesAt,
-    makeLoc,
-    locate,
-    lateral,
-    applyAtmosphere,
-    dispose() {
-      for (const o of disposables) { try { if (o.dispose) o.dispose(); } catch { /* ignore */ } }
-    },
+    group, length: MAXS, sample, halfAt, lanesAt, makeLoc, locate, lateral, applyAtmosphere,
+    dispose() { for (const o of disposables) { try { if (o.dispose) o.dispose(); } catch { /* ignore */ } } },
   };
 }
