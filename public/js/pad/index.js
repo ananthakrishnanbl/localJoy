@@ -15,6 +15,7 @@ import tilt from "./tilt.js";
 import choice from "./choice.js";
 import race from "./race.js";
 import coop from "./coop.js";
+import ctf from "./ctf.js";
 
 const PADS = {
   [gamepad.id]: gamepad,
@@ -23,6 +24,7 @@ const PADS = {
   [choice.id]: choice,
   [race.id]: race,            // <-- was missing: without it "race" fell back to the joystick pad
   [coop.id]: coop,
+  [ctf.id]: ctf,              // capture the flag: basic pad for team select, twin sticks + fire in play
 };
 
 export function getPad(type) {
