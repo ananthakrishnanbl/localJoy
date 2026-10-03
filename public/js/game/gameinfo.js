@@ -8,6 +8,7 @@ export const CONTROLLERS = {
   tilt:   "Tilt your phone",
   choice: "Multiple choice",
   race: "Tilt steering + gas/brake",
+  coop: "Split Team Controls",
   ctf: "Left stick moves · right stick looks · FIRE button above it",
 };
 
@@ -130,6 +131,23 @@ export const GAMES = [
       controller: "race",
       entry: "/js/game/moto-race/main.js",
     },
+
+    {
+    id: "coop-drive",
+    title: "Co-op Highway",
+    tagline: "Two players, one car!",
+    description: "Team up in pairs. One player steers, the other controls the gas and brakes. Survive the procedural track!",
+    cover: "/assets/games/coop-drive-cover.svg",
+    banner: "/assets/games/coop-drive-banner.svg",
+    emoji: "🚙",
+    color: "#3b52ff",
+    minPlayers: 2,
+    maxPlayers: 8, 
+    rating: 4.67,
+    tags: ["Racing", "Co-op", "3D"],
+    controller: "coop",
+    entry: "/js/game/coop-drive/main.js",
+  },
     {
       id: "ctf",
       title: "Capture the Flag",
