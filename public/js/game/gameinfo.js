@@ -10,6 +10,7 @@ export const CONTROLLERS = {
   race: "Tilt steering + gas/brake",
   coop: "Split Team Controls",
   ctf: "Left stick moves · right stick looks · FIRE button above it",
+  stopper: "One big tap button",
 };
 
 export const GAMES = [
@@ -94,6 +95,23 @@ export const GAMES = [
       tags: ["Shooter", "Teams", "Split-screen"],
       controller: "ctf",
       entry: "/js/game/tdm/main.js",
+    },
+    {
+      id: "stop-clock",
+      title: "Stop Clock",
+      tagline: "Stop the hidden stopwatch at exactly 10.00",
+      description:
+      "A stopwatch starts at zero for everyone. One second in, an iPhone-style iris closes over the clock with a smooth animation. Count in your head, then tap your one big button when you think exactly 10 seconds have passed. When everybody has tapped, all irises open together. Score = 500 − |time × 100 − 1000|, so 500 is perfect and 0 means you were a five second off. Best of three rounds wins.",
+      cover:  "/assets/games/stop-clock-cover.svg",
+      banner: "/assets/games/stop-clock-banner.svg",
+      emoji: "⏱️",
+      color: "#4285f4",
+      minPlayers: 1,
+      maxPlayers: 4,
+      rating: 4.5,
+      tags: ["Timing", "Precision", "Party"],
+      controller: "stopper",
+      entry: "/js/game/stop-clock/main.js",
     },
 ];
 
