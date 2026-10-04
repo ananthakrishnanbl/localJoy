@@ -9,6 +9,7 @@ export const CONTROLLERS = {
   choice: "Multiple choice",
   race: "Tilt steering + gas/brake",
   ctf: "Left stick moves · right stick looks · FIRE button above it",
+  turner: "Left / Right tap steering",
 };
 
 export const GAMES = [
@@ -146,6 +147,23 @@ export const GAMES = [
       controller: "ctf",
       entry: "/js/game/ctf/main.js",
     },
+    {
+      id: "loop-rider",
+      title: "Loop Rider",
+      tagline: "Trace the line. Don't drift.",
+      description:
+      "A wobbly loop appears on screen and every player gets their own copy in their corner. Tap LEFT and RIGHT on your phone to nudge your arrow around it. The closer you stay to the line, the higher your score — drift too far and you're out. Best total over three rounds wins.",
+      cover:  "/assets/games/loop-rider-cover.svg",
+      banner: "/assets/games/loop-rider-banner.svg",
+      emoji: "🎯",
+      color: "#3ecf6e",
+      minPlayers: 1,
+      maxPlayers: 4,
+      rating: 4.5,
+      tags: ["Precision", "Party"],
+      controller: "turner",
+      entry: "/js/game/loop-rider/main.js",
+    }
 ];
 
 export const getGame = (id) => GAMES.find((g) => g.id === id);

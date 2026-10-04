@@ -15,6 +15,7 @@ import tilt from "./tilt.js";
 import choice from "./choice.js";
 import race from "./race.js";
 import ctf from "./ctf.js";
+import turner from "./turner.js";
 
 const PADS = {
   [gamepad.id]: gamepad,
@@ -23,6 +24,7 @@ const PADS = {
   [choice.id]: choice,
   [race.id]: race,            // <-- was missing: without it "race" fell back to the joystick pad
   [ctf.id]: ctf,              // capture the flag: basic pad for team select, twin sticks + fire in play
+  [turner.id]: turner,        // loop rider: two tap buttons for LEFT / RIGHT steering
 };
 
 export function getPad(type) {
