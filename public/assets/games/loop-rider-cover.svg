@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Loop Rider">
+  <defs>
+    <radialGradient id="lrbg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#1a2433"/>
+      <stop offset="100%" stop-color="#0a0d13"/>
+    </radialGradient>
+    <linearGradient id="lrloop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7fdcff"/>
+      <stop offset="100%" stop-color="#3ecf6e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#lrbg)"/>
+  <path d="M200 70
+           C300 66 340 140 332 220
+           C324 300 250 344 180 336
+           C108 328 60 280 62 200
+           C64 118 118 74 200 70 Z"
+        fill="none" stroke="url(#lrloop)" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="200" cy="70" r="6" fill="#ffffff" opacity=".7"/>
+  <g transform="translate(200 70) rotate(28)">
+    <polygon points="22,0 -14,-14 -7,0 -14,14" fill="#ff8a3d"/>
+  </g>
+  <text x="200" y="376" text-anchor="middle"
+        font-family="system-ui, sans-serif" font-size="22" font-weight="700"
+        fill="#e6f0ff" letter-spacing="2">LOOP RIDER</text>
+</svg>
