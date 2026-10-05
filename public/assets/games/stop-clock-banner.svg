@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Stop Clock banner">
+  <rect width="1200" height="400" fill="#0a0f15"/>
+
+  <!-- clock on the left -->
+  <g transform="translate(280 200)">
+    <circle cy="14" r="132" fill="#000000" opacity="0.55"/>
+    <circle r="132" fill="#1a2332"/>
+    <circle r="132" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+
+    <g stroke="rgba(230,240,255,0.18)" stroke-width="3" stroke-linecap="round">
+      <line x1="0" y1="-108" x2="0" y2="-120"/>
+      <line x1="0" y1="108" x2="0" y2="120"/>
+      <line x1="-108" y1="0" x2="-120" y2="0"/>
+      <line x1="108" y1="0" x2="120" y2="0"/>
+      <line x1="-77" y1="-77" x2="-85" y2="-85"/>
+      <line x1="77" y1="77" x2="85" y2="85"/>
+      <line x1="77" y1="-77" x2="85" y2="-85"/>
+      <line x1="-77" y1="77" x2="-85" y2="85"/>
+    </g>
+
+    <text x="0" y="22" text-anchor="middle"
+          font-family="Menlo, Consolas, monospace" font-size="72" font-weight="800"
+          fill="#e6f0ff">10.00</text>
+
+    <!-- 8-blade iris, ~40% closed -->
+    <g stroke="rgba(0,0,0,0.7)" stroke-width="1">
+      <path d="M 0 -132 A 132 132 0 0 1 93 -93 L 66 -66 Z" fill="#050a12"/>
+      <path d="M 93 -93 A 132 132 0 0 1 132 0 L 93 0 Z" fill="#0d1a28"/>
+      <path d="M 132 0 A 132 132 0 0 1 93 93 L 66 66 Z" fill="#050a12"/>
+      <path d="M 93 93 A 132 132 0 0 1 0 132 L 0 93 Z" fill="#0d1a28"/>
+      <path d="M 0 132 A 132 132 0 0 1 -93 93 L -66 66 Z" fill="#050a12"/>
+      <path d="M -93 93 A 132 132 0 0 1 -132 0 L -93 0 Z" fill="#0d1a28"/>
+      <path d="M -132 0 A 132 132 0 0 1 -93 -93 L -66 -66 Z" fill="#050a12"/>
+      <path d="M -93 -93 A 132 132 0 0 1 0 -132 L 0 -93 Z" fill="#0d1a28"/>
+    </g>
+  </g>
+
+  <!-- text on the right -->
+  <g font-family="Fredoka, system-ui, sans-serif" fill="#e6f0ff">
+    <text x="580" y="170" font-size="72" font-weight="800" letter-spacing="4">STOP CLOCK</text>
+    <text x="580" y="222" font-size="24" font-weight="600" fill="#8ba0b6">
+      One button. One number. Ten seconds.
+    </text>
+    <text x="580" y="262" font-size="18" font-weight="500" fill="#8ba0b6">
+      The iris closes after 1 second. Stop it at exactly 10.00.
+    </text>
+  </g>
+</svg>

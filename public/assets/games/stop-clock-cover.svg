@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Stop Clock">
+  <rect width="400" height="400" fill="#0a0f15"/>
+
+  <!-- housing shadow -->
+  <circle cx="200" cy="204" r="126" fill="#000000" opacity="0.55"/>
+
+  <!-- clock housing -->
+  <circle cx="200" cy="200" r="126" fill="#1a2332"/>
+  <circle cx="200" cy="200" r="126" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+
+  <!-- tick marks -->
+  <g stroke="rgba(230,240,255,0.18)" stroke-width="3" stroke-linecap="round">
+    <line x1="200" y1="94" x2="200" y2="108"/>
+    <line x1="200" y1="292" x2="200" y2="306"/>
+    <line x1="94" y1="200" x2="108" y2="200"/>
+    <line x1="292" y1="200" x2="306" y2="200"/>
+    <line x1="125" y1="125" x2="135" y2="135"/>
+    <line x1="265" y1="265" x2="275" y2="275"/>
+    <line x1="275" y1="125" x2="265" y2="135"/>
+    <line x1="135" y1="265" x2="125" y2="275"/>
+  </g>
+
+  <!-- digits -->
+  <text x="200" y="220" text-anchor="middle"
+        font-family="Menlo, Consolas, monospace" font-size="66" font-weight="800"
+        fill="#e6f0ff">10.00</text>
+
+  <!-- 8-blade iris, about 40% closed -->
+  <g fill="#050a12" stroke="rgba(0,0,0,0.7)" stroke-width="1">
+    <path d="M 200 74 A 126 126 0 0 1 289 111 L 251 148 Z" fill="#050a12"/>
+    <path d="M 289 111 A 126 126 0 0 1 326 200 L 273 200 Z" fill="#0d1a28"/>
+    <path d="M 326 200 A 126 126 0 0 1 289 289 L 251 252 Z" fill="#050a12"/>
+    <path d="M 289 289 A 126 126 0 0 1 200 326 L 200 273 Z" fill="#0d1a28"/>
+    <path d="M 200 326 A 126 126 0 0 1 111 289 L 149 252 Z" fill="#050a12"/>
+    <path d="M 111 289 A 126 126 0 0 1 74 200 L 127 200 Z" fill="#0d1a28"/>
+    <path d="M 74 200 A 126 126 0 0 1 111 111 L 149 148 Z" fill="#050a12"/>
+    <path d="M 111 111 A 126 126 0 0 1 200 74 L 200 127 Z" fill="#0d1a28"/>
+  </g>
+
+  <text x="200" y="376" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif" font-size="20" font-weight="700"
+        fill="#e6f0ff" letter-spacing="3">STOP CLOCK</text>
+</svg>
