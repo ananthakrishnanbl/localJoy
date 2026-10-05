@@ -1,20 +1,23 @@
 // Stop Clock — hidden stopwatch, one button, target 10.00 s.
 //
-// At t=0 a stopwatch starts and stays visible for 1 s. Then an 8-blade
-// iris (iPhone-camera style) slowly sweeps shut over 1.4 s. When the
-// last player taps their single button, every iris reopens together
-// and each quadrant reveals its frozen time.
+// Flow:
+//   countdown → running → reveal (3 s: clocks visible) → leaderboard
+//   leaderboard: tap to continue
+//     • rounds 1 and 2  → button reads "START"
+//     • round 3         → button reads "PLAY AGAIN"
 //
-// Score = 500 - |time*100 - 1000|. Lower is better. Best of 3 rounds wins.
-// Plays 1-10 players in a balanced grid.
+// Round score = 500 - |t*100 - 1000|, in [0, 100]. Perfect = 100.
+// Highest total over three rounds wins. Plays 1 to 10 players.
 
 const TAU = Math.PI * 2;
 const HEADER_H = 44;
 
+// -------- Timing --------
 const COUNTDOWN       = 3.5;
-const CLOSE_START     = 1.0;
-const CLOSE_DURATION  = 1.4;
-const REVEAL_DURATION = 0.8;
+const CLOSE_START     = 1.0;    // iris begins closing 1 s after GO
+const CLOSE_DURATION  = 1.4;    // how long it takes to fully shut
+const REVEAL_SHOW     = 3.0;    // total time the reveal is on screen
+const REVEAL_ANIM     = 0.8;    // portion of that used for the opening animation
 const TARGET          = 10.0;
 const MAX_TIME        = 20.0;
 const TOTAL_ROUNDS    = 3;
@@ -35,8 +38,6 @@ const FLAP_SEAM   = "rgba(0,0,0,0.7)";
 const BLUE        = "#2aa9e0";
 const GREEN       = "#2fbf71";
 const GOLD        = "#ffb400";
-const DIGIT       = "#e6f0ff";
-const DIGIT_STOP  = "#2aa9e0";
 
 export function start(ctx) {
   const { root, signal } = ctx;
@@ -66,12 +67,12 @@ export function start(ctx) {
 
   /* --------------------------- state ----------------------------- */
   const players = new Map();
-  let state = "countdown";     // countdown | running | results
+  // states: countdown | running | reveal | leaderboard
+  let state = "countdown";
   let stateTimer = COUNTDOWN;
   let roundStart = 0;
   let roundClock = 0;
-  let aperture = 1;            // 1 = open, 0 = fully shut
-  let revealProgress = 0;      // 0..1 during "results"
+  let aperture = 1;            // 1 = open, 0 = shut
   let currentRound = 0;
   let winnerSlots = [];
 
@@ -83,7 +84,7 @@ export function start(ctx) {
     if (!info) return;
     players.set(slot, {
       slot, connected: true, rect: null,
-      stopped: false, stopTime: 0, score: 0,
+      stopped: false, stopTime: 0, score: 0, total: 0,
       ready: false,
       lastSid: null, lastCount: 0,
     });
@@ -97,8 +98,7 @@ export function start(ctx) {
     if (state === "running") {
       ctx.send(e.detail.slot, { type: "stopper-state", state: "armed" });
     }
-    // Reflow only outside of a live round.
-    if (state !== "running") layoutRound();
+    if (state === "countdown") layoutRound();
   });
 
   on(window, "player-leave", (e) => {
@@ -106,9 +106,9 @@ export function start(ctx) {
     if (!p) return;
     p.connected = false;
     p.ready = false;
-    if (state !== "running") layoutRound();
+    if (state === "countdown") layoutRound();
     if (state === "running") checkAllStopped();
-    if (state === "results") checkAllReady();
+    if (state === "leaderboard") checkAllReady();
   });
 
   on(window, "controller-input", (e) => {
@@ -133,7 +133,7 @@ export function start(ctx) {
       ctx.send(slot, { type: "vibrate", ms: 30 });
       ctx.send(slot, { type: "stopper-state", state: "stopped" });
       checkAllStopped();
-    } else if (state === "results" && !p.ready) {
+    } else if (state === "leaderboard" && !p.ready) {
       p.ready = true;
       ctx.send(slot, { type: "vibrate", ms: 20 });
       checkAllReady();
@@ -182,10 +182,13 @@ export function start(ctx) {
   function startRound() {
     if (exiting) return;
     currentRound++;
+    if (currentRound === 1) {
+      // Fresh match: reset totals.
+      for (const p of players.values()) p.total = 0;
+    }
     roundStart = 0;
     roundClock = 0;
     aperture = 1;
-    revealProgress = 0;
     winnerSlots = [];
     for (const p of players.values()) {
       p.stopped = false;
@@ -216,30 +219,41 @@ export function start(ctx) {
     if (active.length === 0) return;
     if (!active.every((p) => p.stopped)) return;
 
+    // Winner = highest round score.
     let best = -Infinity;
     winnerSlots = [];
     for (const p of active) {
       if (p.score > best) { best = p.score; winnerSlots = [p.slot]; }
       else if (p.score === best) winnerSlots.push(p.slot);
     }
-
-    // Enter results. Aperture stays at 0 (fully shut) and the update
-    // loop will open it as revealProgress goes 0 -> 1.
-    aperture = 0;
-    revealProgress = 0;
-    state = "results";
-    ctx.broadcast({ type: "vibrate", ms: [40, 30, 40] });
+    // Fold this round's score into each player's match total.
     for (const p of players.values()) {
-      if (p.connected) ctx.send(p.slot, { type: "stopper-state", state: "replay" });
+      if (p.connected) p.total += p.score;
+    }
+
+    aperture = 0;
+    state = "reveal";
+    stateTimer = REVEAL_SHOW;
+    ctx.broadcast({ type: "vibrate", ms: [40, 30, 40] });
+    // Button stays at "stopped" during the reveal — no change here.
+  }
+
+  function enterLeaderboard() {
+    state = "leaderboard";
+    const isFinal = currentRound >= TOTAL_ROUNDS;
+    for (const p of players.values()) {
+      if (p.connected) {
+        ctx.send(p.slot, { type: "stopper-state", state: isFinal ? "replay" : "start" });
+      }
     }
   }
 
   function checkAllReady() {
-    if (state !== "results") return;
+    if (state !== "leaderboard") return;
     const active = [...players.values()].filter((p) => p.connected);
     if (active.length === 0) return;
     if (!active.every((p) => p.ready)) return;
-    if (currentRound >= TOTAL_ROUNDS) currentRound = 0;
+    if (currentRound >= TOTAL_ROUNDS) currentRound = 0;   // start a fresh match
     startRound();
   }
 
@@ -285,16 +299,17 @@ export function start(ctx) {
       return;
     }
 
-    if (state === "results") {
-      if (revealProgress < 1) {
-        revealProgress = Math.min(1, revealProgress + dt / REVEAL_DURATION);
-        // Opening: aperture goes 0 -> 1. (Before, this was inverted —
-        // aperture = 1 - eased — which jumped to open then closed.)
-        aperture = easeInOut(revealProgress);
-      } else {
-        aperture = 1;
-      }
+    if (state === "reveal") {
+      stateTimer -= dt;
+      // Iris opens during the first REVEAL_ANIM seconds, then holds open.
+      const elapsed = REVEAL_SHOW - stateTimer;
+      const t = Math.max(0, Math.min(1, elapsed / REVEAL_ANIM));
+      aperture = easeInOut(t);
+      if (stateTimer <= 0) enterLeaderboard();
+      return;
     }
+
+    // leaderboard: waiting for taps, nothing to update.
   }
 
   /* ---------------------------- draw ----------------------------- */
@@ -317,15 +332,8 @@ export function start(ctx) {
     return `${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
   }
 
-  /* ---------- 8-blade iris, swept-blade style ---------- */
-  // Each blade spans one angular step of the rim. Its inner edge is an
-  // arc at radius r = R * ap, rotated relative to the outer edge by
-  // `rot`. As ap shrinks the inner arc grows smaller and swings toward
-  // the centre, so the visible "hole" closes like a real camera iris.
-  // Because consecutive blades share the line from (a1, R) to
-  // (a1 + rot, r), they tile perfectly — no gaps at any ap.
   function drawAperture(cx, cy, R, ap) {
-    if (ap >= 0.995) return;                 // fully open, nothing to draw
+    if (ap >= 0.995) return;
 
     const N = 8;
     const step = TAU / N;
@@ -340,22 +348,16 @@ export function start(ctx) {
     for (let i = 0; i < N; i++) {
       const a0 = i * step;
       const a1 = (i + 1) * step;
-
       g.beginPath();
-      // outer rim arc
       g.arc(cx, cy, R, a0, a1);
-
       if (r > 0.6) {
-        // right side: line from outer corner to inner-arc start
         g.lineTo(cx + r * Math.cos(a1 + rot),
                  cy + r * Math.sin(a1 + rot));
-        // inner arc, backward
         g.arc(cx, cy, r, a1 + rot, a0 + rot, true);
       } else {
         g.lineTo(cx, cy);
       }
       g.closePath();
-
       g.fillStyle = (i % 2 === 0) ? FLAP : FLAP_ALT;
       g.fill();
       g.strokeStyle = FLAP_SEAM;
@@ -363,10 +365,7 @@ export function start(ctx) {
       g.stroke();
     }
 
-    // Subtle inner depth ring so the opening reads as a well, not a
-    // flat hole. Single-hue dark shading only.
-    const vg = g.createRadialGradient(cx, cy, Math.max(0, r * 0.6),
-                                      cx, cy, R);
+    const vg = g.createRadialGradient(cx, cy, Math.max(0, r * 0.6), cx, cy, R);
     vg.addColorStop(0, "rgba(0,0,0,0)");
     vg.addColorStop(1, "rgba(0,0,0,0.5)");
     g.fillStyle = vg;
@@ -377,7 +376,7 @@ export function start(ctx) {
     g.restore();
   }
 
-  function drawClockFace(cx, cy, R, timeVal, stopped, hidden, color) {
+  function drawClockFace(cx, cy, R, timeVal, hidden, color) {
     // Housing
     g.beginPath();
     g.arc(cx, cy, R * 1.02, 0, TAU);
@@ -390,8 +389,7 @@ export function start(ctx) {
     // Tick marks
     for (let i = 0; i < 12; i++) {
       const a = i * (TAU / 12) - Math.PI / 2;
-      const r0 = R * 0.86;
-      const r1 = R * 0.92;
+      const r0 = R * 0.86, r1 = R * 0.92;
       g.beginPath();
       g.moveTo(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a));
       g.lineTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a));
@@ -401,7 +399,7 @@ export function start(ctx) {
       g.stroke();
     }
 
-    if (hidden) return;   // digits suppressed while the iris is shut
+    if (hidden) return;
 
     const txt = formatClock(timeVal);
     const fontSize = Math.max(18, R * 0.52);
@@ -418,7 +416,6 @@ export function start(ctx) {
     const color = (info && info.color) || BLUE;
     const name = (info && info.name) || `P${p.slot + 1}`;
 
-    // Cell background
     g.fillStyle = BG_CELL;
     g.fillRect(r.x, r.y, r.w, r.h);
 
@@ -445,27 +442,17 @@ export function start(ctx) {
     roundRect(r.x + pad + 0.5, r.y + pad + 0.5, cardW - 1, cardH - 1, cardH / 2);
     g.stroke();
 
-    // Colour dot
     const dotR = cardH * 0.22;
     g.fillStyle = color;
     g.beginPath();
     g.arc(r.x + pad + cardH * 0.55, r.y + pad + cardH / 2, dotR, 0, TAU);
     g.fill();
 
-    // Name
     g.fillStyle = INK;
     g.font = `700 ${Math.max(11, cardH * 0.42)}px Fredoka, system-ui, sans-serif`;
     g.textAlign = "left";
     g.textBaseline = "middle";
     g.fillText(name, r.x + pad + cardH, r.y + pad + cardH / 2 + 1);
-
-    // Ready tick
-    if (state === "results" && p.ready) {
-      g.textAlign = "right";
-      g.fillStyle = GREEN;
-      g.font = `800 ${cardH * 0.55}px Fredoka, system-ui, sans-serif`;
-      g.fillText("✓", r.x + pad + cardW - cardH * 0.35, r.y + pad + cardH / 2 + 1);
-    }
 
     // Clock region
     const top = r.y + pad + cardH + pad;
@@ -476,17 +463,15 @@ export function start(ctx) {
     const cx = r.x + r.w / 2;
     const cy = (top + bot) / 2;
 
-    // Display time
     let displayTime;
     if (state === "countdown") displayTime = 0;
     else if (p.stopped) displayTime = p.stopTime;
     else displayTime = roundClock;
 
-    // Suppress digits as soon as the iris is essentially shut — this
-    // guarantees nothing can peek through a seam.
-    const hidden = (state === "running" && aperture < 0.08);
+    // Suppress digits while the iris is essentially shut.
+    const hidden = aperture < 0.08;
 
-    drawClockFace(cx, cy, R, displayTime, p.stopped, hidden, color);
+    drawClockFace(cx, cy, R, displayTime, hidden, color);
     drawAperture(cx, cy, R, aperture);
 
     // Status strip
@@ -508,12 +493,168 @@ export function start(ctx) {
         g.font = `600 ${Math.max(11, r.h * 0.028)}px Fredoka, system-ui, sans-serif`;
         g.fillText("Tap when it's 10.00", cx, statusY);
       }
-    } else if (state === "results") {
+    } else if (state === "reveal") {
       const isWinner = winnerSlots.includes(p.slot);
-      g.fillStyle = isWinner ? GOLD : DIGIT_STOP;
+      g.fillStyle = isWinner ? GOLD : BLUE;
       g.font = `800 ${Math.max(13, r.h * 0.038)}px Fredoka, system-ui, sans-serif`;
       g.fillText(`Score ${p.score}`, cx, statusY);
     }
+  }
+
+  /* -------------- Leaderboard (full-screen table) --------------- */
+  function drawLeaderboard() {
+    const W = canvas.width, H = canvas.height;
+    g.fillStyle = BG;
+    g.fillRect(0, 0, W, H);
+
+    const isFinal = currentRound >= TOTAL_ROUNDS;
+    const active = [...players.values()].filter((p) => p.connected);
+
+    // Sort by round score descending; ties broken by total descending, then name.
+    const rows = [...active].sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.total !== a.total) return b.total - a.total;
+      const an = (ctx.player(a.slot)?.name || "");
+      const bn = (ctx.player(b.slot)?.name || "");
+      return an.localeCompare(bn);
+    });
+
+    // Title
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = INK;
+    g.font = "800 40px Fredoka, system-ui, sans-serif";
+    g.fillText(
+      isFinal ? "Final Results" : `Round ${currentRound} Results`,
+      W / 2, HEADER_H + 42
+    );
+
+    // Ready counter
+    const readyCount = active.filter((p) => p.ready).length;
+    g.fillStyle = MUTED;
+    g.font = "600 15px Fredoka, system-ui, sans-serif";
+    g.fillText(
+      isFinal
+        ? `Tap PLAY AGAIN to start a fresh match · ${readyCount} / ${active.length} ready`
+        : `Tap START for the next round · ${readyCount} / ${active.length} ready`,
+      W / 2, HEADER_H + 78
+    );
+
+    // Table geometry
+    const tableX = 120;
+    const tableW = W - tableX * 2;
+    const rowH = Math.min(46, (H - HEADER_H - 200) / Math.max(1, rows.length));
+    const headerY = HEADER_H + 118;
+    const firstRowY = headerY + 30;
+
+    // Column x-positions (relative to W)
+    const colRank  = tableX + 30;
+    const colName  = tableX + 90;
+    const colTime  = tableX + tableW * 0.55;
+    const colScore = tableX + tableW * 0.72;
+    const colTotal = tableX + tableW * 0.88;
+
+    // Header row
+    g.textBaseline = "middle";
+    g.font = "700 13px Fredoka, system-ui, sans-serif";
+    g.fillStyle = FAINT;
+    g.textAlign = "left";
+    g.fillText("RANK", colRank - 10, headerY);
+    g.fillText("PLAYER", colName, headerY);
+    g.textAlign = "right";
+    g.fillText("TIME", colTime, headerY);
+    g.fillText("SCORE", colScore, headerY);
+    g.fillText("TOTAL", colTotal, headerY);
+
+    // Divider
+    g.strokeStyle = DIVIDER;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(tableX, headerY + 16);
+    g.lineTo(tableX + tableW, headerY + 16);
+    g.stroke();
+
+    // Rows
+    rows.forEach((p, i) => {
+      const info = ctx.player(p.slot);
+      const name = (info && info.name) || `P${p.slot + 1}`;
+      const color = (info && info.color) || BLUE;
+      const y = firstRowY + i * rowH + rowH / 2;
+
+      const isWinner = winnerSlots.includes(p.slot);
+
+      // Rank number (ties share the same number)
+      let rank = 1;
+      for (let j = 0; j < i; j++) if (rows[j].score === p.score) { rank = j + 1; break; }
+      if (i > 0 && rows[i - 1].score === p.score) {
+        // Same as previous player's rank
+        rank = 1;
+        for (let j = 0; j < i; j++) if (rows[j].score === p.score) { rank = j + 1; break; }
+      } else {
+        rank = i + 1;
+      }
+
+      // Faint row separator
+      g.strokeStyle = DIVIDER;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(tableX, y + rowH / 2 - 0.5);
+      g.lineTo(tableX + tableW, y + rowH / 2 - 0.5);
+      g.stroke();
+
+      // Rank
+      g.textAlign = "left";
+      g.textBaseline = "middle";
+      g.font = "800 18px Fredoka, system-ui, sans-serif";
+      g.fillStyle = isWinner ? GOLD : MUTED;
+      g.fillText(String(rank), colRank - 10, y);
+
+      // Colour dot
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(colName - 16, y, 6, 0, TAU);
+      g.fill();
+
+      // Name
+      g.fillStyle = INK;
+      g.font = `700 20px Fredoka, system-ui, sans-serif`;
+      g.textAlign = "left";
+      g.fillText(name, colName, y);
+
+      // Time
+      g.fillStyle = INK;
+      g.font = `600 20px "SF Mono", Menlo, Consolas, monospace`;
+      g.textAlign = "right";
+      g.fillText(formatClock(p.stopTime), colTime, y);
+
+      // Round score
+      g.fillStyle = isWinner ? GOLD : BLUE;
+      g.font = `800 22px Fredoka, system-ui, sans-serif`;
+      g.fillText(String(p.score), colScore, y);
+
+      // Total
+      g.fillStyle = MUTED;
+      g.font = `700 18px Fredoka, system-ui, sans-serif`;
+      g.fillText(String(p.total), colTotal, y);
+
+      // Ready tick
+      if (p.ready) {
+        g.fillStyle = GREEN;
+        g.font = `800 20px Fredoka, system-ui, sans-serif`;
+        g.textAlign = "left";
+        g.fillText("✓", colTotal + 60, y);
+      }
+    });
+
+    // Footer instruction
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = MUTED;
+    g.font = "500 14px Fredoka, system-ui, sans-serif";
+    g.fillText(
+      "Host: press Exit to leave the game",
+      W / 2, H - 24
+    );
   }
 
   function drawHeader() {
@@ -535,12 +676,12 @@ export function start(ctx) {
     g.fillStyle = MUTED;
     g.font = "700 14px Fredoka, system-ui, sans-serif";
     g.textAlign = "center";
-    g.fillText(`Round ${currentRound} / ${TOTAL_ROUNDS}`, canvas.width / 2, HEADER_H / 2 + 1);
+    g.fillText(`Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`, canvas.width / 2, HEADER_H / 2 + 1);
 
     g.fillStyle = FAINT;
     g.font = "600 13px Fredoka, system-ui, sans-serif";
     g.textAlign = "right";
-    g.fillText("Target 10.00 · Score = 100 − |t × 100 − 1000|", canvas.width - 20, HEADER_H / 2 + 1);
+    g.fillText("Target 10.00 · Score = 500 − |t × 100 − 1000|", canvas.width - 20, HEADER_H / 2 + 1);
   }
 
   function drawCountdown() {
@@ -567,54 +708,19 @@ export function start(ctx) {
     g.fillText("The iris closes after one second. Count in your head.", W / 2, H / 2 + 132);
   }
 
-  function drawResultsBanner() {
-    if (state !== "results") return;
-    if (revealProgress < 0.9) return;
-
-    const W = canvas.width, H = canvas.height;
-    const alpha = Math.min(1, (revealProgress - 0.9) / 0.1);
-
-    g.save();
-    g.globalAlpha = alpha;
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-
-    g.fillStyle = "rgba(26,35,50,0.94)";
-    g.fillRect(0, HEADER_H, W, 54);
-    g.strokeStyle = CARD_EDGE;
-    g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(0, HEADER_H + 54.5);
-    g.lineTo(W, HEADER_H + 54.5);
-    g.stroke();
-
-    const leader = winnerSlots.length === 1
-      ? (ctx.player(winnerSlots[0])?.name || `P${winnerSlots[0] + 1}`)
-      : "Tie";
-    const score = winnerSlots.length > 0
-      ? (players.get(winnerSlots[0])?.score ?? 0)
-      : 0;
-
-    g.fillStyle = GOLD;
-    g.font = "800 24px Fredoka, system-ui, sans-serif";
-    g.fillText(`🏆 ${leader} — ${score}`, W / 2, HEADER_H + 27);
-
-    g.fillStyle = MUTED;
-    g.font = "500 14px Fredoka, system-ui, sans-serif";
-    g.fillText("Tap your button to play again · Host: Exit to leave", W / 2, H - 20);
-    g.restore();
-  }
-
   function draw() {
     g.fillStyle = BG;
     g.fillRect(0, 0, canvas.width, canvas.height);
 
-    for (const p of players.values()) {
-      if (p.rect) drawQuadrant(p);
+    if (state === "leaderboard") {
+      drawLeaderboard();
+    } else {
+      for (const p of players.values()) {
+        if (p.rect) drawQuadrant(p);
+      }
+      if (state === "countdown") drawCountdown();
     }
 
-    if (state === "countdown") drawCountdown();
-    drawResultsBanner();
     drawHeader();
   }
 
