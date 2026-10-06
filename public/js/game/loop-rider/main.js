@@ -31,24 +31,33 @@ const LAP_TIME = 15;
 const ROUND_COUNTDOWN = 3.5;
 const ROUND_END_PAUSE = 4;
 const TOTAL_ROUNDS = 3;
-const HEADER_H = 48;
+const HEADER_H = 56;
 
-// -------- dark-mode UI palette (Google Maps dark) --------
-const UI_BG         = "#1a2332";
-const UI_HEADER     = "#202a3a";
-const UI_DIVIDER    = "#2d3949";
-const UI_CARD       = "rgba(32, 36, 46, 0.92)";
-const UI_CARD_EDGE  = "rgba(255,255,255,0.08)";
+/* ---------------- localJoy-style playful dark palette ------------- */
+const UI_BG         = "#2a2d4a";              // deep purple-navy page bg
+const UI_BG_DEEP    = "#232644";              // header / darker areas
+const UI_CARD_BG    = "#333659";              // panel background
+const UI_CARD_BG2   = "#2f3255";              // secondary panel
+const UI_CREAM      = "#f5f0e0";              // thick card border / warm off-white
+const UI_CREAM_DIM  = "rgba(245,240,224,0.18)";
+const UI_DIVIDER    = "#3d4166";
 const UI_TEXT       = "#ffffff";
-const UI_TEXT_MUTED = "#9aa0a6";
-const UI_TEXT_FAINT = "#5f6368";
-const MAP_LOADING   = "#1b2634";
+const UI_TEXT_MUTED = "#b8bdd9";
+const UI_TEXT_FAINT = "#7c82a8";
+const MAP_LOADING   = "#333659";
 const ROUTE_BLUE    = "#4285f4";
-const ROUTE_HALO    = "rgba(66,133,244,0.35)";
-const ROUTE_CASING  = "#8ab4f8";
-const START_RED     = "#ea4335";
-const WIN_GOLD      = "#fbbc04";
-const READY_GREEN   = "#34a853";
+const ROUTE_HALO    = "rgba(66,133,244,0.40)";
+const ROUTE_CASING  = "#a8c7fa";
+const START_RED     = "#e8615d";
+const WIN_GOLD      = "#f5c542";
+const READY_GREEN   = "#5cb85c";
+
+const ACCENT_CORAL  = "#e8615d";
+const ACCENT_BLUE   = "#4a90e2";
+const ACCENT_GREEN  = "#5cb85c";
+const ACCENT_YELLOW = "#f5c542";
+
+const FONT_STACK = '"Nunito", ui-rounded, "SF Pro Rounded", "Quicksand", system-ui, -apple-system, "Segoe UI", sans-serif';
 
 export function start(ctx) {
   const { root, signal } = ctx;
@@ -83,7 +92,7 @@ export function start(ctx) {
   mapImg.onerror = () => { mapReady = false; };
   mapImg.src = "/assets/games/loop-rider-back.jpg";
 
-  const MAP_ASPECT = 16 / 9;   // any wide image; cover-cropped if it differs
+  const MAP_ASPECT = 16 / 9;
   function drawMapCover(x, y, w, h) {
     if (!mapReady) {
       g.fillStyle = MAP_LOADING;
@@ -183,7 +192,6 @@ export function start(ctx) {
   let stateTimer = ROUND_COUNTDOWN;
   let loop = null;
   let winnerSlots = [];
-  // Slots that must tap once to restart, filled in when we enter "gameend".
   let pendingRestart = new Set();
 
   function addPlayer(slot) {
@@ -215,8 +223,6 @@ export function start(ctx) {
     p.connected = false;
     if (p.arrow) p.arrow.gone = true;
 
-    // Someone left while we were waiting for restart taps. Drop their
-    // requirement, and if that was the last one, restart now.
     if (state === "gameend" && pendingRestart.has(e.detail.slot)) {
       pendingRestart.delete(e.detail.slot);
       maybeRestart();
@@ -229,8 +235,6 @@ export function start(ctx) {
     const p = players.get(slot);
     if (!p || !data || data.type !== "turn") return;
 
-    // Track running counters even during countdown / gameend so the
-    // first real tap after GO is a real tap, not a sid catch-up.
     const left  = data.left  | 0;
     const right = data.right | 0;
     if (data.sid !== p.lastSid) {
@@ -247,7 +251,6 @@ export function start(ctx) {
     const tapped = (dl + dr) > 0;
     if (!tapped) return;
 
-    // On the final standings, any tap = "I'm ready to play again".
     if (state === "gameend") {
       if (pendingRestart.has(slot)) {
         pendingRestart.delete(slot);
@@ -257,12 +260,11 @@ export function start(ctx) {
       return;
     }
 
-    // Pre-round / post-buzzer taps do nothing.
     if (state !== "playing") return;
 
     if (p.arrow && !p.arrow.done && !p.arrow.gone) {
-      p.arrow.pending -= dl;    // left  = counter-clockwise
-      p.arrow.pending += dr;    // right = clockwise
+      p.arrow.pending -= dl;
+      p.arrow.pending += dr;
     }
   });
 
@@ -282,9 +284,6 @@ export function start(ctx) {
       const frac = layout[i];
       if (!frac) return;
       const rect = quadrantRect(frac);
-      // Index N/2 sits on the LEFT side of the loop (index 0 is the
-      // right). Fixed angle, so every new loop starts in the same place
-      // relative to itself — just the mirror of where it used to start.
       const startIdx = N / 2;
       const start = loop.pts[startIdx];
       const next = loop.pts[(startIdx + 1) % N];
@@ -332,8 +331,6 @@ export function start(ctx) {
   function nextRoundOrEnd() {
     if (exiting) return;
     if (currentRound >= TOTAL_ROUNDS) {
-      // Enter the final-standings screen. Every currently connected
-      // player must tap once to restart the whole match.
       let best = -1;
       winnerSlots = [];
       for (const p of players.values()) {
@@ -352,7 +349,6 @@ export function start(ctx) {
     }
   }
 
-  // Reset everything and start a brand-new 3-round match.
   function restartGame() {
     if (exiting) return;
     pendingRestart.clear();
@@ -369,12 +365,11 @@ export function start(ctx) {
     startRound();
   }
 
-  // Called whenever a "ready" flag clears. Restarts if nobody is left.
   function maybeRestart() {
     if (state !== "gameend") return;
     if (pendingRestart.size > 0) return;
     const anyConnected = [...players.values()].some((p) => p.connected);
-    if (!anyConnected) return;    // console will exit us anyway
+    if (!anyConnected) return;
     restartGame();
   }
 
@@ -453,7 +448,6 @@ export function start(ctx) {
       if (stateTimer <= 0) nextRoundOrEnd();
       return;
     }
-    // gameend: wait for every player to tap, or for the host to Exit.
   }
 
   /* ---------------------------- draw ----------------------------- */
@@ -563,148 +557,192 @@ export function start(ctx) {
   function drawQuadrant(p) {
     const r = p.rect;
     const info = ctx.player(p.slot);
-    const color = (info && info.color) || "#9fb4c7";
+    const color = (info && info.color) || ACCENT_BLUE;
     const name  = (info && info.name)  || `P${p.slot + 1}`;
 
-    g.fillStyle = UI_BG;
-    g.fillRect(r.x, r.y, r.w, r.h);
-    g.strokeStyle = UI_DIVIDER;
-    g.lineWidth = 1;
-    g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    const inset = 7;
+    const cX = r.x + inset;
+    const cY = r.y + inset;
+    const cW = r.w - inset * 2;
+    const cH = r.h - inset * 2;
+    const rad = 20;
 
-    const cardH = 44;
-    const mapPad = 10;
-    const mapX = r.x + mapPad;
-    const mapY = r.y + cardH + mapPad;
-    const mapW = r.w - mapPad * 2;
-    const mapH = r.h - cardH - mapPad * 2 - 22;
+    // Card shadow + fill
+    g.save();
+    g.shadowColor = "rgba(10, 8, 30, 0.55)";
+    g.shadowBlur = 16;
+    g.shadowOffsetY = 5;
+    g.fillStyle = UI_CARD_BG;
+    roundRect(cX, cY, cW, cH, rad);
+    g.fill();
+    g.restore();
+
+    // Thick cream border (localJoy signature)
+    g.strokeStyle = UI_CREAM;
+    g.lineWidth = 4;
+    roundRect(cX + 2, cY + 2, cW - 4, cH - 4, rad - 2);
+    g.stroke();
+
+    // Inner content
+    const pad = 12;
+    const innerX = cX + pad;
+    const innerY = cY + pad;
+    const innerW = cW - pad * 2;
+    const innerH = cH - pad * 2;
+
+    // ---- Top row: player chip + score ----
+    const rowH = 36;
+    const chipH = 30;
+    const chipY = innerY + (rowH - chipH) / 2;
+
+    // Name chip pill
+    g.font = `800 15px ${FONT_STACK}`;
+    const nameW = g.measureText(name).width;
+    const chipW = Math.min(innerW * 0.55, nameW + 48);
+    g.fillStyle = "rgba(0,0,0,0.28)";
+    roundRect(innerX, chipY, chipW, chipH, chipH / 2);
+    g.fill();
+
+    // Color dot
+    g.fillStyle = color;
+    g.beginPath();
+    g.arc(innerX + 17, innerY + rowH / 2, 8, 0, TAU);
+    g.fill();
+
+    // Name
+    g.fillStyle = UI_CREAM;
+    g.textAlign = "left";
+    g.textBaseline = "middle";
+    g.fillText(name, innerX + 32, innerY + rowH / 2 + 1, chipW - 40);
+
+    // Score (right)
+    const shownScore = p.arrow ? Math.round(p.arrow.score) : 0;
+    g.font = `900 22px ${FONT_STACK}`;
+    g.fillStyle = ACCENT_YELLOW;
+    g.textAlign = "right";
+    g.fillText(String(shownScore), innerX + innerW, innerY + rowH / 2 + 1);
+
+    // ---- Map area ----
+    const mapX = innerX;
+    const mapY = innerY + rowH + 10;
+    const mapW = innerW;
+    const mapH = innerH - rowH - 10 - 22;
     if (mapW <= 0 || mapH <= 0) return;
 
     g.save();
-    g.beginPath();
-    g.rect(mapX, mapY, mapW, mapH);
+    roundRect(mapX, mapY, mapW, mapH, 12);
     g.clip();
 
     drawMapCover(mapX, mapY, mapW, mapH);
 
     const side = Math.min(mapW, mapH);
-    const cx = mapX + mapW / 2;
-    const cy = mapY + mapH / 2;
+    const ccx = mapX + mapW / 2;
+    const ccy = mapY + mapH / 2;
     const scale = side / 2;
 
-    if (loop) drawLoopAsRoute(loop, cx, cy, scale);
+    if (loop) drawLoopAsRoute(loop, ccx, ccy, scale);
 
     const a = p.arrow;
-    if (a && a.trail.length > 1) drawTrail(a, cx, cy, scale, color);
-    if (a && !a.gone) drawNavArrow(cx + a.x * scale, cy + a.y * scale, a.heading, color);
+    if (a && a.trail.length > 1) drawTrail(a, ccx, ccy, scale, color);
+    if (a && !a.gone) drawNavArrow(ccx + a.x * scale, ccy + a.y * scale, a.heading, color);
 
-    const vg = g.createRadialGradient(cx, cy, Math.min(mapW, mapH) * 0.45,
-                                      cx, cy, Math.max(mapW, mapH) * 0.62);
+    const vg = g.createRadialGradient(ccx, ccy, Math.min(mapW, mapH) * 0.45,
+                                      ccx, ccy, Math.max(mapW, mapH) * 0.62);
     vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.28)");
+    vg.addColorStop(1, "rgba(20,15,40,0.35)");
     g.fillStyle = vg;
     g.fillRect(mapX, mapY, mapW, mapH);
 
+    // Waiting overlay for players with no arrow yet
+    if (!a) {
+      g.fillStyle = "rgba(35,38,68,0.72)";
+      g.fillRect(mapX, mapY, mapW, mapH);
+      g.fillStyle = UI_CREAM;
+      g.font = `800 15px ${FONT_STACK}`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText("Waiting for next round…", ccx, ccy);
+    }
+
     g.restore();
 
-    const cardX = r.x + mapPad;
-    const cardY = r.y + 8;
-    const cardW = Math.min(r.w - mapPad * 2, 320);
-
-    g.save();
-    g.shadowColor = "rgba(0,0,0,0.5)";
-    g.shadowBlur = 8;
-    g.shadowOffsetY = 2;
-    g.fillStyle = UI_CARD;
-    roundRect(cardX, cardY, cardW, 36, 8);
-    g.fill();
-    g.restore();
-
-    g.strokeStyle = UI_CARD_EDGE;
-    g.lineWidth = 1;
-    roundRect(cardX + 0.5, cardY + 0.5, cardW - 1, 35, 8);
-    g.stroke();
-
-    g.fillStyle = color;
-    g.beginPath();
-    g.arc(cardX + 14, cardY + 18, 6, 0, TAU);
-    g.fill();
-
-    g.fillStyle = UI_TEXT;
-    g.font = "600 14px system-ui, sans-serif";
-    g.textAlign = "left";
-    g.textBaseline = "middle";
-    g.fillText(name, cardX + 26, cardY + 19);
-
-    const shownScore = a ? Math.round(a.score) : 0;
-    g.fillStyle = ROUTE_CASING;
-    g.font = "800 20px system-ui, sans-serif";
-    g.textAlign = "right";
-    g.fillText(String(shownScore), cardX + cardW - 12, cardY + 19);
-
-    const barW = r.w - mapPad * 2;
-    const barX = r.x + mapPad;
-    const barY = r.y + r.h - 14;
-    g.fillStyle = "rgba(255,255,255,0.08)";
-    roundRect(barX, barY, barW, 6, 3);
+    // ---- Progress bar ----
+    const barY = innerY + innerH - 14;
+    const barH = 8;
+    g.fillStyle = "rgba(255,255,255,0.10)";
+    roundRect(innerX, barY, innerW, barH, barH / 2);
     g.fill();
     if (a) {
       const prog = Math.min(1, a.progress / N);
       g.fillStyle = color;
-      roundRect(barX, barY, Math.max(0, barW * prog), 6, 3);
+      roundRect(innerX, barY, Math.max(0, innerW * prog), barH, barH / 2);
       g.fill();
     }
 
+    // ---- Status chip ----
     if (a && a.done) {
       const label = a.dnf ? "DNF" : a.finished ? "FINISHED" : "TIME";
-      const chipColor = a.dnf ? "#d93025" : a.finished ? "#1e8e3e" : "#f9ab00";
-      g.font = "800 12px system-ui, sans-serif";
-      const tw = g.measureText(label).width + 16;
-      const chipX = r.x + r.w - mapPad - tw;
-      const chipY = r.y + r.h - 26;
+      const chipColor = a.dnf ? ACCENT_CORAL : a.finished ? ACCENT_GREEN : ACCENT_YELLOW;
+      g.font = `900 12px ${FONT_STACK}`;
+      const tw = g.measureText(label).width + 24;
+      const chX = innerX + innerW - tw;
+      const chY = innerY + rowH + 16;
       g.fillStyle = chipColor;
-      roundRect(chipX, chipY, tw, 18, 9);
+      roundRect(chX, chY, tw, 22, 11);
       g.fill();
-      g.fillStyle = "#ffffff";
+      g.fillStyle = UI_BG_DEEP;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      g.fillText(label, chipX + tw / 2, chipY + 10);
-    }
-
-    if (!a) {
-      g.fillStyle = UI_TEXT_FAINT;
-      g.font = "600 14px system-ui, sans-serif";
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      g.fillText("Waiting for next round…", r.x + r.w / 2, r.y + r.h / 2);
+      g.fillText(label, chX + tw / 2, chY + 12);
     }
   }
 
   function drawHeader() {
-    g.fillStyle = UI_HEADER;
+    // Deep purple header bar
+    g.fillStyle = UI_BG_DEEP;
     g.fillRect(0, 0, canvas.width, HEADER_H);
-    g.strokeStyle = UI_DIVIDER;
-    g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(0, HEADER_H + 0.5);
-    g.lineTo(canvas.width, HEADER_H + 0.5);
-    g.stroke();
 
-    g.fillStyle = UI_TEXT;
-    g.font = "800 15px system-ui, sans-serif";
-    g.textAlign = "left";
+    // Cream bottom accent line
+    g.fillStyle = UI_CREAM;
+    g.fillRect(0, HEADER_H - 3, canvas.width, 3);
+
+    // Playful multicolor title "Loop Rider"
+    const title = "Loop Rider";
+    const palette = [ACCENT_CORAL, ACCENT_BLUE, ACCENT_GREEN, ACCENT_YELLOW,
+                     ACCENT_CORAL, ACCENT_BLUE, ACCENT_GREEN, ACCENT_YELLOW,
+                     ACCENT_CORAL, ACCENT_BLUE];
+    g.font = `900 22px ${FONT_STACK}`;
     g.textBaseline = "middle";
-    g.fillText("Loop Rider", 20, HEADER_H / 2 + 1);
+    g.textAlign = "left";
+    let tx = 22;
+    const ty = HEADER_H / 2;
+    for (let i = 0; i < title.length; i++) {
+      const ch = title[i];
+      g.fillStyle = ch === " " ? UI_CREAM : palette[i % palette.length];
+      g.fillText(ch, tx, ty);
+      tx += g.measureText(ch).width;
+    }
 
-    g.fillStyle = UI_TEXT_MUTED;
-    g.font = "700 16px system-ui, sans-serif";
+    // Round pill (yellow, right side)
+    const label = `ROUND ${currentRound} / ${TOTAL_ROUNDS}`;
+    g.font = `900 13px ${FONT_STACK}`;
+    const tw = g.measureText(label).width;
+    const pillW = tw + 30;
+    const pillH = 28;
+    const pillX = canvas.width - 22 - pillW;
+    const pillY = (HEADER_H - pillH) / 2;
+    g.fillStyle = ACCENT_YELLOW;
+    roundRect(pillX, pillY, pillW, pillH, pillH / 2);
+    g.fill();
+    g.fillStyle = UI_BG_DEEP;
     g.textAlign = "center";
-    g.fillText(`Round ${currentRound} / ${TOTAL_ROUNDS}`, canvas.width / 2, HEADER_H / 2 + 1);
+    g.textBaseline = "middle";
+    g.fillText(label, pillX + pillW / 2, pillY + pillH / 2 + 1);
   }
 
   function drawCountdown() {
     const W = canvas.width, H = canvas.height;
-    g.fillStyle = "rgba(15, 20, 30, 0.82)";
+    g.fillStyle = "rgba(35, 38, 68, 0.82)";
     g.fillRect(0, HEADER_H, W, H - HEADER_H);
 
     g.textAlign = "center";
@@ -713,133 +751,195 @@ export function start(ctx) {
     const t = stateTimer;
     const txt = t > 2.5 ? "3" : t > 1.5 ? "2" : t > 0.5 ? "1" : "GO!";
 
-    g.fillStyle = ROUTE_BLUE;
-    g.font = "900 140px system-ui, sans-serif";
-    g.fillText(txt, W / 2, H / 2 - 20);
+    // Big playful number with cream stroke
+    const bigFont = txt === "GO!" ? 170 : 200;
+    g.font = `900 ${bigFont}px ${FONT_STACK}`;
+    g.lineWidth = 12;
+    g.lineJoin = "round";
+    g.strokeStyle = UI_CREAM;
+    g.strokeText(txt, W / 2, H / 2 - 30);
+    g.fillStyle = txt === "GO!" ? ACCENT_GREEN : ACCENT_CORAL;
+    g.fillText(txt, W / 2, H / 2 - 30);
 
-    g.fillStyle = UI_TEXT;
-    g.font = "700 22px system-ui, sans-serif";
-    g.fillText("Tap or hold LEFT / RIGHT to steer", W / 2, H / 2 + 90);
+    // Subtitle pill
+    const sub = "Tap or hold LEFT / RIGHT to steer";
+    g.font = `900 20px ${FONT_STACK}`;
+    const sw = g.measureText(sub).width;
+    const pw = sw + 48;
+    const ph = 44;
+    const px = (W - pw) / 2;
+    const py = H / 2 + 70;
+    g.fillStyle = UI_CREAM;
+    roundRect(px, py, pw, ph, ph / 2);
+    g.fill();
+    g.fillStyle = UI_BG_DEEP;
+    g.fillText(sub, W / 2, py + ph / 2 + 1);
 
+    // Hint line
     g.fillStyle = UI_TEXT_MUTED;
-    g.font = "500 16px system-ui, sans-serif";
-    g.fillText("Stay on the blue route. Score = 1000 minus how far you drift.", W / 2, H / 2 + 122);
+    g.font = `600 15px ${FONT_STACK}`;
+    g.fillText("Stay on the blue route. Score = 1000 minus how far you drift.", W / 2, py + ph + 28);
   }
 
   function drawRoundEnd() {
     const W = canvas.width, H = canvas.height;
-    g.fillStyle = "rgba(15, 20, 30, 0.92)";
+    g.fillStyle = "rgba(35, 38, 68, 0.94)";
     g.fillRect(0, HEADER_H, W, H - HEADER_H);
+
+    // Cream-bordered card
+    const cardW = 720, cardH = 500;
+    const cardX = (W - cardW) / 2;
+    const cardY = 110;
+
+    g.save();
+    g.shadowColor = "rgba(10, 8, 30, 0.6)";
+    g.shadowBlur = 20;
+    g.shadowOffsetY = 6;
+    g.fillStyle = UI_CARD_BG;
+    roundRect(cardX, cardY, cardW, cardH, 26);
+    g.fill();
+    g.restore();
+
+    g.strokeStyle = UI_CREAM;
+    g.lineWidth = 4;
+    roundRect(cardX + 2, cardY + 2, cardW - 4, cardH - 4, 24);
+    g.stroke();
 
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillStyle = UI_TEXT;
-    g.font = "800 40px system-ui, sans-serif";
-    g.fillText(`Round ${currentRound} complete`, W / 2, 120);
+    g.font = `900 34px ${FONT_STACK}`;
+    g.fillStyle = UI_CREAM;
+    g.fillText(`Round ${currentRound} complete`, W / 2, cardY + 72);
 
     const list = [...players.values()]
       .filter((p) => p.connected || p.arrow)
       .sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    const y0 = 210, dy = 44;
+    const y0 = cardY + 160, dy = 58;
     list.forEach((p, i) => {
       const info = ctx.player(p.slot);
       const name = (info && info.name) || `P${p.slot + 1}`;
-      const color = (info && info.color) || "#fff";
+      const color = (info && info.color) || UI_TEXT;
       const y = y0 + i * dy;
 
-      g.fillStyle = color;
-      g.beginPath();
-      g.arc(W / 2 - 260, y, 8, 0, TAU);
+      // Row pill
+      g.fillStyle = "rgba(0,0,0,0.22)";
+      roundRect(cardX + 40, y - 22, cardW - 80, 44, 22);
       g.fill();
 
-      g.textAlign = "left";
-      g.font = "600 24px system-ui, sans-serif";
-      g.fillStyle = UI_TEXT;
-      g.fillText(name, W / 2 - 240, y);
+      // Color dot
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(cardX + 72, y, 9, 0, TAU);
+      g.fill();
 
+      // Name
+      g.textAlign = "left";
+      g.font = `800 22px ${FONT_STACK}`;
+      g.fillStyle = UI_CREAM;
+      g.fillText(name, cardX + 96, y + 1);
+
+      // Score
       g.textAlign = "right";
-      g.font = "800 26px system-ui, sans-serif";
-      g.fillStyle = ROUTE_CASING;
-      g.fillText(String(p.roundScores[currentRound - 1] || 0), W / 2 + 60, y);
-
-      g.textAlign = "left";
-      g.font = "500 14px system-ui, sans-serif";
-      g.fillStyle = UI_TEXT_FAINT;
-      g.fillText(`total ${p.total}`, W / 2 + 80, y + 2);
+      g.font = `900 26px ${FONT_STACK}`;
+      g.fillStyle = ACCENT_YELLOW;
+      g.fillText(String(p.roundScores[currentRound - 1] || 0), cardX + cardW - 84, y + 1);
     });
   }
 
   function drawGameEnd() {
     const W = canvas.width, H = canvas.height;
-    g.fillStyle = "rgba(15, 20, 30, 0.95)";
+    g.fillStyle = "rgba(35, 38, 68, 0.96)";
     g.fillRect(0, HEADER_H, W, H - HEADER_H);
 
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillStyle = UI_TEXT;
-    g.font = "800 44px system-ui, sans-serif";
-    g.fillText("Final standings", W / 2, 90);
+    g.font = `900 44px ${FONT_STACK}`;
+    g.fillStyle = UI_CREAM;
+    g.fillText("Final standings", W / 2, 96);
 
+    g.font = `600 15px ${FONT_STACK}`;
     g.fillStyle = UI_TEXT_MUTED;
-    g.font = "500 15px system-ui, sans-serif";
-    g.fillText("Host: press Exit to leave · Everyone else: tap any button to play again", W / 2, 128);
+    g.fillText("Host: press Exit to leave  ·  Everyone else: tap any button to play again", W / 2, 134);
 
     const list = [...players.values()].sort((a, b) => (b.total || 0) - (a.total || 0));
-    const y0 = 200, dy = 46;
+    const y0 = 200, dy = 54;
     list.forEach((p, i) => {
       const info = ctx.player(p.slot);
       const name = (info && info.name) || `P${p.slot + 1}`;
-      const color = (info && info.color) || "#fff";
+      const color = (info && info.color) || UI_TEXT;
       const y = y0 + i * dy;
       const isWinner = winnerSlots.includes(p.slot);
       const ready = !pendingRestart.has(p.slot);
 
+      // Row background
+      g.fillStyle = isWinner ? "rgba(245,197,66,0.16)" : "rgba(0,0,0,0.22)";
+      roundRect(W / 2 - 350, y - 23, 700, 46, 23);
+      g.fill();
+      if (isWinner) {
+        g.strokeStyle = ACCENT_YELLOW;
+        g.lineWidth = 2;
+        roundRect(W / 2 - 349, y - 22, 698, 44, 22);
+        g.stroke();
+      }
+
+      // Color dot
       g.fillStyle = color;
       g.beginPath();
-      g.arc(W / 2 - 300, y, 9, 0, TAU);
+      g.arc(W / 2 - 318, y, 11, 0, TAU);
       g.fill();
 
+      // Name
       g.textAlign = "left";
-      g.font = (isWinner ? "800 " : "600 ") + "26px system-ui, sans-serif";
-      g.fillStyle = UI_TEXT;
-      g.fillText((isWinner ? "🏆 " : "") + name, W / 2 - 280, y);
+      g.font = `${isWinner ? "900" : "800"} 24px ${FONT_STACK}`;
+      g.fillStyle = UI_CREAM;
+      g.fillText((isWinner ? "🏆 " : "") + name, W / 2 - 294, y + 1);
 
+      // Score
       g.textAlign = "right";
-      g.font = (isWinner ? "900 " : "800 ") + "28px system-ui, sans-serif";
-      g.fillStyle = isWinner ? WIN_GOLD : ROUTE_CASING;
-      g.fillText(String(p.total || 0), W / 2 + 100, y);
+      g.font = `900 28px ${FONT_STACK}`;
+      g.fillStyle = isWinner ? ACCENT_YELLOW : UI_CREAM;
+      g.fillText(String(p.total || 0), W / 2 + 200, y + 1);
 
-      // Ready checkmark (green) or waiting dot (gray)
+      // Ready indicator
       if (p.connected) {
-        g.textAlign = "left";
-        g.font = "800 20px system-ui, sans-serif";
+        g.textAlign = "center";
+        g.font = `900 22px ${FONT_STACK}`;
         if (ready) {
-          g.fillStyle = READY_GREEN;
-          g.fillText("✓", W / 2 + 140, y);
+          g.fillStyle = ACCENT_GREEN;
+          g.fillText("✓", W / 2 + 250, y + 1);
         } else {
           g.fillStyle = UI_TEXT_FAINT;
-          g.fillText("…", W / 2 + 140, y);
+          g.fillText("…", W / 2 + 250, y + 1);
         }
       }
     });
 
-    // Ready counter strip at the bottom
+    // Bottom strip
     const total = pendingRestart.size;
     const were = [...players.values()].filter((p) => p.connected || p.arrow).length;
     const ready = Math.max(0, were - total);
-    const stripY = H - 70;
+    const stripY = H - 66;
 
+    g.textAlign = "center";
+    g.textBaseline = "middle";
     if (total === 0) {
-      g.fillStyle = READY_GREEN;
-      g.font = "800 22px system-ui, sans-serif";
-      g.textAlign = "center";
+      g.font = `900 22px ${FONT_STACK}`;
+      g.fillStyle = ACCENT_GREEN;
       g.fillText("Everyone is ready — starting…", W / 2, stripY);
     } else {
-      g.fillStyle = UI_TEXT;
-      g.font = "800 22px system-ui, sans-serif";
-      g.textAlign = "center";
-      g.fillText(`Tap any button to play again  (${ready} / ${were} ready)`, W / 2, stripY);
+      const label = `Tap any button to play again     ${ready} / ${were} ready`;
+      g.font = `900 16px ${FONT_STACK}`;
+      const tw = g.measureText(label).width;
+      const pw = tw + 48;
+      const ph = 42;
+      const px = (W - pw) / 2;
+      const py = stripY - ph / 2;
+      g.fillStyle = ACCENT_CORAL;
+      roundRect(px, py, pw, ph, ph / 2);
+      g.fill();
+      g.fillStyle = UI_CREAM;
+      g.fillText(label, W / 2, stripY + 1);
     }
   }
 
