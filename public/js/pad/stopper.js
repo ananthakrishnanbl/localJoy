@@ -74,6 +74,7 @@ export default {
       .stopper-btn.idle    { background-color: #aebdcc; color: #eef6fb; }
       .stopper-btn.armed   { background-color: #e5484d; color: #ffffff; }
       .stopper-btn.stopped { background-color: #2b3d4f; color: #7b8b9c; }
+      .stopper-btn.start   { background-color: #2fbf71; color: #ffffff; }
       .stopper-btn.replay  { background-color: #2fbf71; color: #ffffff; }
     `;
     document.head.append(style);
@@ -109,7 +110,7 @@ export default {
     btn.addEventListener("contextmenu", (e) => e.preventDefault());
 
     /* -------- state from the game -------- */
-    const LABELS = { idle: "WAIT", armed: "STOP", stopped: "STOPPED", replay: "PLAY AGAIN" };
+    const LABELS = { idle: "WAIT", armed: "STOP", stopped: "STOPPED", start: "START", replay: "PLAY AGAIN" };
     function setState(s) {
       if (dead) return;
       if (!LABELS[s]) return;

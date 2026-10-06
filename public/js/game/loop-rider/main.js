@@ -3,7 +3,7 @@
 //
 // The big screen is split into up to four quadrants, one per player.
 // Every quadrant shows the SAME randomly generated closed loop on the
-// SAME /assets/games/loop-runner-back.jpg backdrop. The loop is drawn
+// SAME /assets/games/loop-rider-back.jpg backdrop. The loop is drawn
 // like a Google Maps route (blue #4285f4 with a light halo). Each
 // player steers a nav chevron around it with LEFT / RIGHT taps on
 // their phone (the "turner" controller). Tap once to nudge; hold to
@@ -282,8 +282,12 @@ export function start(ctx) {
       const frac = layout[i];
       if (!frac) return;
       const rect = quadrantRect(frac);
-      const start = loop.pts[0];
-      const next = loop.pts[1];
+      // Index N/2 sits on the LEFT side of the loop (index 0 is the
+      // right). Fixed angle, so every new loop starts in the same place
+      // relative to itself — just the mirror of where it used to start.
+      const startIdx = N / 2;
+      const start = loop.pts[startIdx];
+      const next = loop.pts[(startIdx + 1) % N];
       const heading = Math.atan2(next.y - start.y, next.x - start.x);
       p.rect = rect;
       p.score = 1000;
@@ -293,7 +297,7 @@ export function start(ctx) {
         penalty: 0,
         score: 1000,
         progress: 0,
-        lastIndex: 0,
+        lastIndex: startIdx,
         done: false, dnf: false, finished: false, gone: false,
         trail: [{ x: start.x, y: start.y }],
       };
@@ -489,7 +493,7 @@ export function start(ctx) {
     g.lineWidth = 5;
     g.stroke();
 
-    const s0 = pts[0];
+    const s0 = pts[N / 2];
     const sx = cx + s0.x * scale;
     const sy = cy + s0.y * scale;
     g.fillStyle = "#ffffff";
@@ -734,8 +738,8 @@ export function start(ctx) {
     g.fillText(`Round ${currentRound} complete`, W / 2, 120);
 
     const list = [...players.values()]
-    .filter((p) => p.connected || p.arrow)
-    .sort((a, b) => (b.score || 0) - (a.score || 0));
+      .filter((p) => p.connected || p.arrow)
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
 
     const y0 = 210, dy = 44;
     list.forEach((p, i) => {
@@ -876,8 +880,8 @@ export function start(ctx) {
           ctx.send(p.slot, {
             type: "hud",
             hp: Math.max(0, Math.min(100, a.score / 10)),
-                   text,
-                   down: a.dnf,
+            text,
+            down: a.dnf,
           });
         }
       }
