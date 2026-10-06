@@ -7,9 +7,39 @@ export function setupWeapons(G) {
     ctx, THREE, scene, meshes, floorTop, H, playAnim, setHandGun, viewGunPos, setViewGun, chars, temps,
     decals, setPickup, nameOf, colorOf, vibrate, bang, ding, feed, hurt
   } = G;
+  const S = G.S;
 
   /* ---------------- ammo + reload ---------------- */
   const gunOf = (ch) => GUNS[ch.guns[ch.cur]?.id] || GUNS.g1;
+
+  /* ---------------- scope (zoom) ---------------- */
+  // The phone sends a running count "sc" of SCOPE taps. It is read here (a second listener on the same event as input.js),
+  // so a dropped message can never lose a tap. An odd number of new taps toggles the scope.
+  const scSeen = new Map();                                       // slot -> { sid, sc }
+  function sendScope(ch) { ctx.send(ch.slot, { type: "ctf-scope", on: !!ch.scoped, gun: gunOf(ch).name }); }
+  function setScope(ch, on) {
+    on = !!on;
+    if (!!ch.scoped === on) return;
+    ch.scoped = on;
+    if (on) ch.scopeId = gunOf(ch).id;                            // the zoom of the gun you scoped with, even while it eases out
+    ding(on ? 760 : 520, 0.04);
+    sendScope(ch);
+  }
+  function toggleScope(ch) {
+    if (!ch.alive || S.phase !== "play") return;
+    if (!ch.scoped && ch.reloadT > 0) { vibrate(ch.slot, [10, 20, 10]); return; }   // no scoping while reloading
+    setScope(ch, !ch.scoped);
+  }
+  G.on(window, "controller-input", (e) => {
+    const { slot, data } = e.detail || {};
+    if (!data || data.type !== "ctf") return;
+    const sc = data.sc | 0, rec = scSeen.get(slot);
+    if (!rec || rec.sid !== data.sid) { scSeen.set(slot, { sid: data.sid, sc }); return; }   // first message of this page load: just remember the count
+    const d = sc - rec.sc;
+    rec.sc = sc;
+    const ch = chars.get(slot);
+    if (ch && d > 0 && (d & 1)) toggleScope(ch);
+  });
   function sendAmmo(ch) {
     const g = gunOf(ch);
     ctx.send(ch.slot, { type: "ctf-ammo", ammo: ch.ammo, max: g.mag, reserve: ch.reserve, total: g.total, reloading: ch.reloadT > 0, time: g.reload, left: +ch.reloadT.toFixed(2) });
@@ -24,6 +54,7 @@ export function setupWeapons(G) {
   function swapGun(ch) {                                          // SWAP: the other carried gun into your hand
     if (!ch.alive || ch.guns.length < 2) return;
     ch.guns[ch.cur].ammo = ch.ammo; ch.guns[ch.cur].reserve = ch.reserve;
+    setScope(ch, false);
     ch.cur = 1 - ch.cur;
     ch.ammo = ch.guns[ch.cur].ammo; ch.reserve = ch.guns[ch.cur].reserve; ch.reloadT = 0; ch.lastShot = performance.now() / 1000 - gunOf(ch).delay + 0.25;
     setViewGun(ch); setHandGun(ch);
@@ -33,6 +64,7 @@ export function setupWeapons(G) {
   function pickGun(ch) {                                          // PICK: the gun in your hand is swapped with the one on the floor
     const p = ch.near;
     if (!ch.alive || !p) { vibrate(ch.slot, [20, 30, 20]); return; }
+    setScope(ch, false);
     const old = { id: ch.guns[ch.cur].id, ammo: ch.ammo, reserve: ch.reserve };
     ch.guns[ch.cur] = { id: p.gunId, ammo: p.ammo, reserve: p.reserve };
     ch.ammo = p.ammo; ch.reserve = p.reserve; ch.reloadT = 0;
@@ -46,6 +78,7 @@ export function setupWeapons(G) {
   function startReload(ch) {
     const g = gunOf(ch);
     if (!ch.alive || ch.reloadT > 0 || ch.ammo >= g.mag || ch.reserve <= 0) return;   // nothing left to reload with
+    setScope(ch, false);
     ch.reloadT = g.reload;
     ding(300, 0.06);
     sendAmmo(ch);
@@ -94,5 +127,5 @@ export function setupWeapons(G) {
   }
 
   // shared with the modules set up after this one
-  Object.assign(G, { gunOf, sendAmmo, sendGun, swapGun, pickGun, startReload, shoot });
+  Object.assign(G, { gunOf, sendAmmo, sendGun, swapGun, pickGun, startReload, shoot, setScope, toggleScope, sendScope });
 }

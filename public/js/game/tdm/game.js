@@ -7,6 +7,7 @@ import {
   PICKUP_COUNT, PICKUP_SEED, PICKUP_TYPES, PICKUP_RANGE, PICKUP_LIFE, PICKUP_ANIM, HIT_FLASH, LOOK_YAW, LOOK_PITCH,
   GUNS, START_GUNS, ANIM, TEAMS, SIDES, clampN, stickVal, mulberry32,
 } from "./config.js";
+import { createScope } from "./scope.js";
 
 export function createGame(S) {
   const { THREE, ctx, scene, meshes, floorTop, H, RADIUS, hits, clearAt, cells, bases, soloSpawns, medSpots, faceMid, roster, chars, st, models, ui, lobby, fac, medkits } = S;
@@ -18,6 +19,7 @@ export function createGame(S) {
   const vibrate = (slot, ms) => ctx.send(slot, { type: "vibrate", ms });
   const gunOf = (ch) => GUNS[ch.guns[ch.cur]?.id] || GUNS.g1;
   const facName = (f) => fac.name(f), facColor = (f) => fac.color(f);
+  const scope = createScope(S, { ding, vibrate, gunOf });          // the scope: zoom, scope picture, auto-off (see scope.js)
 
   /* ---------------- sound ---------------- */
   let audio = null;
@@ -178,11 +180,13 @@ export function createGame(S) {
     ch.cur = (Math.random() * ch.guns.length) | 0;                      // one of them at random in hand
     ch.ammo = ch.guns[ch.cur].ammo; ch.reserve = ch.guns[ch.cur].reserve;
     ch.reloadT = 0; ch.lookDX = ch.lookDY = 0; ch.hdirT = 0; ch.shootT = 0; ch.pickT = 0;
+    scope.reset(ch);
     setViewGun(ch); setHandGun(ch);
     if (ch.av.mixer) { ch.av.cur = ""; ch.av.mixer.stopAllAction(); playAnim(ch.av, ANIM.idle); }
     sendAmmo(ch); sendGun(ch, true);
   }
   function removeChar(ch) {
+    scope.remove(ch);
     scene.remove(ch.av.group, ch.cam);
     viewScene.remove(ch.gun.group);
     if (ch.gun.model) disposeGunModel(ch.gun.model);
@@ -205,7 +209,7 @@ export function createGame(S) {
   }
   function kill(v, a) {
     v.alive = false; v.deadT = 0; v.respawn = RESPAWN_TIME; v.deaths++; a.kills++; a.fac.kills++;
-    v.input.fire = false; v.reloadT = 0;
+    v.input.fire = false; v.reloadT = 0; scope.set(v, false);
     playAnim(v.av, ANIM.die, true);
     ui.feed([[nameOf(a), facColor(a.fac)], [" ▸ "], [nameOf(v), facColor(v.fac)]]);
     vibrate(a.slot, [40, 30, 40]); vibrate(v.slot, [150, 60, 150]);
@@ -231,6 +235,7 @@ export function createGame(S) {
   function swapGun(ch) {                                          // SWAP: the other carried gun into your hand
     if (!ch.alive || ch.guns.length < 2) return;
     ch.guns[ch.cur].ammo = ch.ammo; ch.guns[ch.cur].reserve = ch.reserve;
+    scope.set(ch, false);
     ch.cur = 1 - ch.cur;
     ch.ammo = ch.guns[ch.cur].ammo; ch.reserve = ch.guns[ch.cur].reserve; ch.reloadT = 0; ch.lastShot = performance.now() / 1000 - gunOf(ch).delay + 0.25;
     setViewGun(ch); setHandGun(ch);
@@ -240,6 +245,7 @@ export function createGame(S) {
   function pickGun(ch) {                                          // PICK: the gun in your hand is swapped with the one on the floor
     const p = ch.near;
     if (!ch.alive || !p) { vibrate(ch.slot, [20, 30, 20]); return; }
+    scope.set(ch, false);
     const old = { id: ch.guns[ch.cur].id, ammo: ch.ammo, reserve: ch.reserve };
     ch.guns[ch.cur] = { id: p.gunId, ammo: p.ammo, reserve: p.reserve };
     ch.ammo = p.ammo; ch.reserve = p.reserve; ch.reloadT = 0;
@@ -253,6 +259,7 @@ export function createGame(S) {
   function startReload(ch) {
     const g = gunOf(ch);
     if (!ch.alive || ch.reloadT > 0 || ch.ammo >= g.mag || ch.reserve <= 0) return;   // nothing left to reload with
+    scope.set(ch, false);
     ch.reloadT = g.reload;
     ding(300, 0.06);
     sendAmmo(ch);
@@ -395,19 +402,20 @@ export function createGame(S) {
     const now = performance.now();
     if (active && now - ch.inputAt > 600) { inp.mx = inp.my = inp.lx = inp.ly = 0; inp.fire = false; }   // phone went quiet: let go of everything
     let moving = false;
+    const { lookMul, speedMul } = scope.tick(ch, dt, active);       // scope: zoom the camera, draw the scope, slow turning / walking
 
     if (active && ch.alive) {
       // drag-to-look: the phone sends bursts, so feed them in smoothly over the next few frames
       const kx = ch.lookDX * (1 - Math.exp(-dt * 30)), ky = ch.lookDY * (1 - Math.exp(-dt * 30));
       ch.lookDX -= kx; ch.lookDY -= ky;
-      ch.yaw -= kx * LOOK_YAW;
-      ch.pitch = clampN(ch.pitch + ky * LOOK_PITCH, -1.2, 1.2);
+      ch.yaw -= kx * LOOK_YAW * lookMul;
+      ch.pitch = clampN(ch.pitch + ky * LOOK_PITCH * lookMul, -1.2, 1.2);
       const f = -inp.my, s = inp.mx, mag = Math.min(1, Math.hypot(f, s));
       if (mag > 0.05) {
         const fx = -Math.sin(ch.yaw), fz = -Math.cos(ch.yaw), rx = Math.cos(ch.yaw), rz = -Math.sin(ch.yaw);
         let dx = fx * f + rx * s, dz = fz * f + rz * s;
         const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-        const step = H * 3.5 * mag * dt, n = Math.ceil(step / (RADIUS * 0.5)), sd = step / n;
+        const step = H * 3.5 * mag * speedMul * dt, n = Math.ceil(step / (RADIUS * 0.5)), sd = step / n;
         for (let k = 0; k < n; k++) {                    // small sub-steps, per axis = slide along walls
           const nx = ch.x + dx * sd; if (!hits(nx, ch.z)) ch.x = nx;
           const nz = ch.z + dz * sd; if (!hits(ch.x, nz)) ch.z = nz;
@@ -576,8 +584,8 @@ export function createGame(S) {
       ch.inputAt = performance.now();
       // look + reload arrive as running totals: act on the change since the last message
       const lookX = +data.lookX || 0, lookY = +data.lookY || 0, rl = data.rl | 0;
-      const sw = data.sw | 0, pk = data.pk | 0;
-      if (ch.sid !== data.sid) { ch.sid = data.sid; ch.lookPX = lookX; ch.lookPY = lookY; ch.rlSeen = rl; ch.swSeen = sw; ch.pkSeen = pk; }   // new page load: start counting from here
+      const sw = data.sw | 0, pk = data.pk | 0, sc = data.sc | 0;
+      if (ch.sid !== data.sid) { ch.sid = data.sid; ch.lookPX = lookX; ch.lookPY = lookY; ch.rlSeen = rl; ch.swSeen = sw; ch.pkSeen = pk; ch.scSeen = sc; }   // new page load: start counting from here
       const dX = lookX - ch.lookPX, dY = lookY - ch.lookPY;
       ch.lookPX = lookX; ch.lookPY = lookY;
       if (ch.alive) { ch.lookDX += clampN(dX, -2, 2); ch.lookDY += clampN(dY, -2, 2); }
@@ -585,7 +593,8 @@ export function createGame(S) {
       if (st.phase === "play") {
         if (sw !== ch.swSeen) { ch.swSeen = sw; swapGun(ch); }
         if (pk !== ch.pkSeen) { ch.pkSeen = pk; pickGun(ch); }
-      } else { ch.swSeen = sw; ch.pkSeen = pk; }
+        if (sc !== ch.scSeen) { const d = sc - ch.scSeen; ch.scSeen = sc; if (d & 1) scope.toggle(ch); }   // an odd number of new taps toggles the scope
+      } else { ch.swSeen = sw; ch.pkSeen = pk; ch.scSeen = sc; }
     } else if (data.type === "move") lobby.lobbyMove(slot, stickVal(data.x));
     else if (data.type === "button") lobby.lobbyButton(slot, data.id, !!data.pressed);
   }
