@@ -1,43 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Stop Clock">
-  <rect width="400" height="400" fill="#0a0f15"/>
+  <defs>
+    <radialGradient id="scGlow" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#5b8def" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="scShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
 
-  <!-- housing shadow -->
-  <circle cx="200" cy="204" r="126" fill="#000000" opacity="0.55"/>
+  <!-- Background -->
+  <rect width="400" height="400" fill="#1e2246"/>
+  <circle cx="200" cy="180" r="170" fill="url(#scGlow)"/>
 
-  <!-- clock housing -->
-  <circle cx="200" cy="200" r="126" fill="#1a2332"/>
-  <circle cx="200" cy="200" r="126" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+  <!-- Soft outer ring (site's card feel) -->
+  <circle cx="200" cy="195" r="135" fill="none" stroke="#5b8def" stroke-opacity="0.15" stroke-width="1.5"/>
 
-  <!-- tick marks -->
-  <g stroke="rgba(230,240,255,0.18)" stroke-width="3" stroke-linecap="round">
-    <line x1="200" y1="94" x2="200" y2="108"/>
-    <line x1="200" y1="292" x2="200" y2="306"/>
-    <line x1="94" y1="200" x2="108" y2="200"/>
-    <line x1="292" y1="200" x2="306" y2="200"/>
-    <line x1="125" y1="125" x2="135" y2="135"/>
-    <line x1="265" y1="265" x2="275" y2="275"/>
-    <line x1="275" y1="125" x2="265" y2="135"/>
-    <line x1="135" y1="265" x2="125" y2="275"/>
+  <!-- White clock housing -->
+  <g filter="url(#scShadow)">
+    <circle cx="200" cy="195" r="118" fill="#ffffff"/>
+  </g>
+  <circle cx="200" cy="195" r="118" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>
+
+  <!-- 12 tick marks -->
+  <g stroke="#1a1f3d" stroke-opacity="0.22" stroke-width="2.5" stroke-linecap="round">
+    <line x1="200" y1="86" x2="200" y2="97"/>
+    <line x1="200" y1="293" x2="200" y2="304"/>
+    <line x1="91"  y1="195" x2="102" y2="195"/>
+    <line x1="298" y1="195" x2="309" y2="195"/>
+    <line x1="123" y1="118" x2="131" y2="126"/>
+    <line x1="269" y1="264" x2="277" y2="272"/>
+    <line x1="277" y1="118" x2="269" y2="126"/>
+    <line x1="131" y1="264" x2="123" y2="272"/>
   </g>
 
-  <!-- digits -->
-  <text x="200" y="220" text-anchor="middle"
-        font-family="Menlo, Consolas, monospace" font-size="66" font-weight="800"
-        fill="#e6f0ff">10.00</text>
+  <!-- Digits -->
+  <text x="200" y="207" text-anchor="middle"
+        font-family="Menlo, Consolas, monospace" font-size="42" font-weight="800"
+        fill="#5b8def" letter-spacing="0.5">10.00</text>
 
-  <!-- 8-blade iris, about 40% closed -->
-  <g fill="#050a12" stroke="rgba(0,0,0,0.7)" stroke-width="1">
-    <path d="M 200 74 A 126 126 0 0 1 289 111 L 251 148 Z" fill="#050a12"/>
-    <path d="M 289 111 A 126 126 0 0 1 326 200 L 273 200 Z" fill="#0d1a28"/>
-    <path d="M 326 200 A 126 126 0 0 1 289 289 L 251 252 Z" fill="#050a12"/>
-    <path d="M 289 289 A 126 126 0 0 1 200 326 L 200 273 Z" fill="#0d1a28"/>
-    <path d="M 200 326 A 126 126 0 0 1 111 289 L 149 252 Z" fill="#050a12"/>
-    <path d="M 111 289 A 126 126 0 0 1 74 200 L 127 200 Z" fill="#0d1a28"/>
-    <path d="M 74 200 A 126 126 0 0 1 111 111 L 149 148 Z" fill="#050a12"/>
-    <path d="M 111 111 A 126 126 0 0 1 200 74 L 200 127 Z" fill="#0d1a28"/>
+  <!-- 8 iris blades, ~70% open (i.e. ~30% closed) -->
+  <!-- even blades: #0a0f2a -->
+  <!-- odd blades:  #141a3f -->
+  <g stroke="rgba(255,255,255,0.06)" stroke-width="1">
+    <path d="M 318 195 A 118 118 0 0 1 283.44 278.44 L 253.38 258.04 A 82.6 82.6 0 0 0 282.32 201.81 Z" fill="#0a0f2a"/>
+    <path d="M 283.44 278.44 A 118 118 0 0 1 200 313 L 193.19 277.32 A 82.6 82.6 0 0 0 253.38 258.04 Z" fill="#141a3f"/>
+    <path d="M 200 313 A 118 118 0 0 1 116.56 278.44 L 136.96 248.38 A 82.6 82.6 0 0 0 193.19 277.32 Z" fill="#0a0f2a"/>
+    <path d="M 116.56 278.44 A 118 118 0 0 1 82 195 L 117.68 188.19 A 82.6 82.6 0 0 0 136.96 248.38 Z" fill="#141a3f"/>
+    <path d="M 82 195 A 118 118 0 0 1 116.56 111.56 L 146.62 131.96 A 82.6 82.6 0 0 0 117.68 188.19 Z" fill="#0a0f2a"/>
+    <path d="M 116.56 111.56 A 118 118 0 0 1 200 77 L 206.81 112.68 A 82.6 82.6 0 0 0 146.62 131.96 Z" fill="#141a3f"/>
+    <path d="M 200 77 A 118 118 0 0 1 283.44 111.56 L 263.04 141.62 A 82.6 82.6 0 0 0 206.81 112.68 Z" fill="#0a0f2a"/>
+    <path d="M 283.44 111.56 A 118 118 0 0 1 318 195 L 282.32 201.81 A 82.6 82.6 0 0 0 263.04 141.62 Z" fill="#141a3f"/>
   </g>
 
-  <text x="200" y="376" text-anchor="middle"
-        font-family="Fredoka, system-ui, sans-serif" font-size="20" font-weight="700"
-        fill="#e6f0ff" letter-spacing="3">STOP CLOCK</text>
+  <!-- Title -->
+  <text x="200" y="366" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="24" font-weight="700"
+        fill="#ffffff" letter-spacing="4">STOP CLOCK</text>
+
+  <!-- Accent underline -->
+  <rect x="150" y="376" width="100" height="3" rx="1.5" fill="#5b8def"/>
 </svg>

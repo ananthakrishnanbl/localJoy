@@ -1,48 +1,88 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Stop Clock banner">
-  <rect width="1200" height="400" fill="#0a0f15"/>
+  <defs>
+    <radialGradient id="scbGlow" cx="28%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#5b8def" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="scbShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
 
-  <!-- clock on the left -->
+  <!-- Background -->
+  <rect width="1200" height="400" fill="#1e2246"/>
+  <circle cx="280" cy="200" r="320" fill="url(#scbGlow)"/>
+
+  <!-- ============ CLOCK (left) ============ -->
   <g transform="translate(280 200)">
-    <circle cy="14" r="132" fill="#000000" opacity="0.55"/>
-    <circle r="132" fill="#1a2332"/>
-    <circle r="132" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+    <!-- Decorative ring behind the clock -->
+    <circle r="152" fill="none" stroke="#5b8def" stroke-opacity="0.15" stroke-width="1.5"/>
 
-    <g stroke="rgba(230,240,255,0.18)" stroke-width="3" stroke-linecap="round">
-      <line x1="0" y1="-108" x2="0" y2="-120"/>
-      <line x1="0" y1="108" x2="0" y2="120"/>
-      <line x1="-108" y1="0" x2="-120" y2="0"/>
-      <line x1="108" y1="0" x2="120" y2="0"/>
-      <line x1="-77" y1="-77" x2="-85" y2="-85"/>
-      <line x1="77" y1="77" x2="85" y2="85"/>
-      <line x1="77" y1="-77" x2="85" y2="-85"/>
-      <line x1="-77" y1="77" x2="-85" y2="85"/>
+    <!-- White clock housing -->
+    <g filter="url(#scbShadow)">
+      <circle r="130" fill="#ffffff"/>
+    </g>
+    <circle r="130" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>
+
+    <!-- Tick marks -->
+    <g stroke="#1a1f3d" stroke-opacity="0.22" stroke-width="2.5" stroke-linecap="round">
+      <line x1="0" y1="-110" x2="0" y2="-99"/>
+      <line x1="0" y1="110" x2="0" y2="99"/>
+      <line x1="-110" y1="0" x2="-99" y2="0"/>
+      <line x1="110" y1="0" x2="99" y2="0"/>
+      <line x1="-78" y1="-78" x2="-70" y2="-70"/>
+      <line x1="78" y1="78" x2="70" y2="70"/>
+      <line x1="78" y1="-78" x2="70" y2="-70"/>
+      <line x1="-78" y1="78" x2="-70" y2="70"/>
     </g>
 
-    <text x="0" y="22" text-anchor="middle"
-          font-family="Menlo, Consolas, monospace" font-size="72" font-weight="800"
-          fill="#e6f0ff">10.00</text>
+    <!-- Digits -->
+    <text x="0" y="14" text-anchor="middle"
+          font-family="Menlo, Consolas, monospace" font-size="46" font-weight="800"
+          fill="#5b8def" letter-spacing="0.5">10.00</text>
 
-    <!-- 8-blade iris, ~40% closed -->
-    <g stroke="rgba(0,0,0,0.7)" stroke-width="1">
-      <path d="M 0 -132 A 132 132 0 0 1 93 -93 L 66 -66 Z" fill="#050a12"/>
-      <path d="M 93 -93 A 132 132 0 0 1 132 0 L 93 0 Z" fill="#0d1a28"/>
-      <path d="M 132 0 A 132 132 0 0 1 93 93 L 66 66 Z" fill="#050a12"/>
-      <path d="M 93 93 A 132 132 0 0 1 0 132 L 0 93 Z" fill="#0d1a28"/>
-      <path d="M 0 132 A 132 132 0 0 1 -93 93 L -66 66 Z" fill="#050a12"/>
-      <path d="M -93 93 A 132 132 0 0 1 -132 0 L -93 0 Z" fill="#0d1a28"/>
-      <path d="M -132 0 A 132 132 0 0 1 -93 -93 L -66 -66 Z" fill="#050a12"/>
-      <path d="M -93 -93 A 132 132 0 0 1 0 -132 L 0 -93 Z" fill="#0d1a28"/>
+    <!-- 8 iris blades (~70% open) -->
+    <g stroke="rgba(255,255,255,0.06)" stroke-width="1">
+      <path d="M 130 0 A 130 130 0 0 1 91.92 91.92 L 58.80 69.45 A 91 91 0 0 0 90.69 7.50 Z" fill="#0a0f2a"/>
+      <path d="M 91.92 91.92 A 130 130 0 0 1 0 130 L -7.50 90.69 A 91 91 0 0 0 58.80 69.45 Z" fill="#141a3f"/>
+      <path d="M 0 130 A 130 130 0 0 1 -91.92 91.92 L -69.45 58.80 A 91 91 0 0 0 -7.50 90.69 Z" fill="#0a0f2a"/>
+      <path d="M -91.92 91.92 A 130 130 0 0 1 -130 0 L -90.69 -7.50 A 91 91 0 0 0 -69.45 58.80 Z" fill="#141a3f"/>
+      <path d="M -130 0 A 130 130 0 0 1 -91.92 -91.92 L -58.80 -69.45 A 91 91 0 0 0 -90.69 -7.50 Z" fill="#0a0f2a"/>
+      <path d="M -91.92 -91.92 A 130 130 0 0 1 0 -130 L 7.50 -90.69 A 91 91 0 0 0 -58.80 -69.45 Z" fill="#141a3f"/>
+      <path d="M 0 -130 A 130 130 0 0 1 91.92 -91.92 L 69.45 -58.80 A 91 91 0 0 0 7.50 -90.69 Z" fill="#0a0f2a"/>
+      <path d="M 91.92 -91.92 A 130 130 0 0 1 130 0 L 90.69 7.50 A 91 91 0 0 0 69.45 -58.80 Z" fill="#141a3f"/>
     </g>
   </g>
 
-  <!-- text on the right -->
-  <g font-family="Fredoka, system-ui, sans-serif" fill="#e6f0ff">
-    <text x="580" y="170" font-size="72" font-weight="800" letter-spacing="4">STOP CLOCK</text>
-    <text x="580" y="222" font-size="24" font-weight="600" fill="#8ba0b6">
+  <!-- ============ TEXT (right) ============ -->
+  <g font-family="Fredoka, system-ui, sans-serif">
+    <!-- Big title -->
+    <text x="560" y="160" font-size="72" font-weight="800"
+          fill="#ffffff" letter-spacing="3">STOP CLOCK</text>
+
+    <!-- Accent underline -->
+    <rect x="562" y="180" width="120" height="4" rx="2" fill="#5b8def"/>
+
+    <!-- Tagline -->
+    <text x="560" y="228" font-size="22" font-weight="600" fill="#8ab4f8">
       One button. One number. Ten seconds.
     </text>
-    <text x="580" y="262" font-size="18" font-weight="500" fill="#8ba0b6">
+
+    <!-- Subtitle -->
+    <text x="560" y="264" font-size="17" font-weight="500" fill="#8b93b8">
       The iris closes after 1 second. Stop it at exactly 10.00.
     </text>
+
+    <!-- Small pill at the bottom (like the site's info chips) -->
+    <g transform="translate(560 300)">
+      <rect width="118" height="28" rx="14" fill="rgba(91,141,239,0.16)"/>
+      <text x="59" y="19" text-anchor="middle"
+            font-size="13" font-weight="700" fill="#8ab4f8">1-10 PLAYERS</text>
+    </g>
+    <g transform="translate(688 300)">
+      <rect width="128" height="28" rx="14" fill="rgba(91,141,239,0.16)"/>
+      <text x="64" y="19" text-anchor="middle"
+            font-size="13" font-weight="700" fill="#8ab4f8">HIGH SCORE WINS</text>
+    </g>
   </g>
 </svg>

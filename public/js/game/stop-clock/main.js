@@ -1,61 +1,73 @@
 // Stop Clock — hidden stopwatch, one button, target 10.00 s.
 //
-// Flow:
-//   countdown → running → reveal (3 s: clocks visible) → leaderboard
-//   leaderboard: tap to continue
-//     • rounds 1 and 2  → button reads "START"
-//     • round 3         → button reads "PLAY AGAIN"
+// Flow: countdown → running → reveal (3 s of frozen clocks) →
+//       leaderboard (all players tap START / PLAY AGAIN).
 //
-// Round score = 500 - |t*100 - 1000|, in [0, 100]. Perfect = 100.
-// Highest total over three rounds wins. Plays 1 to 10 players.
+// Round score = 500 - |t*100 - 1000|, in [0, 500]. Highest total over
+// three rounds wins. Plays 1-10 players.
 
 const TAU = Math.PI * 2;
 const HEADER_H = 44;
 
-// -------- Timing --------
 const COUNTDOWN       = 3.5;
-const CLOSE_START     = 1.0;    // iris begins closing 1 s after GO
-const CLOSE_DURATION  = 1.4;    // how long it takes to fully shut
-const REVEAL_SHOW     = 3.0;    // total time the reveal is on screen
-const REVEAL_ANIM     = 0.8;    // portion of that used for the opening animation
+const CLOSE_START     = 1.0;
+const CLOSE_DURATION  = 1.4;
+const REVEAL_DURATION = 3.0;    // seconds the frozen clocks stay visible
+const REVEAL_ANIM     = 0.6;    // portion of that used to open the irises
 const TARGET          = 10.0;
 const MAX_TIME        = 20.0;
 const TOTAL_ROUNDS    = 3;
 
-// -------- Dark theme palette --------
-const BG          = "#0a0f15";
-const BG_CELL     = "#0d141c";
-const CARD        = "#1a2332";
-const CARD_EDGE   = "rgba(255,255,255,0.07)";
-const CARD_SHADOW = "rgba(0,0,0,0.5)";
-const INK         = "#e6f0ff";
-const MUTED       = "#8ba0b6";
-const FAINT       = "#4f6274";
-const DIVIDER     = "rgba(255,255,255,0.06)";
-const FLAP        = "#050a12";
-const FLAP_ALT    = "#0d1a28";
-const FLAP_SEAM   = "rgba(0,0,0,0.7)";
-const BLUE        = "#2aa9e0";
+// -------- Palette matched to the localJoy site --------
+const BG          = "#1e2246";
+const BG_CELL     = "#232850";
+const BG_HEADER   = "#1a1e3d";
+const CARD        = "#ffffff";
+const CARD_EDGE   = "rgba(255,255,255,0.10)";
+const CARD_SHADOW = "rgba(0,0,0,0.45)";
+const INK         = "#1a1f3d";
+const INK_LIGHT   = "#ffffff";
+const MUTED       = "#8b93b8";
+const FAINT       = "#5a6188";
+const DIVIDER     = "rgba(255,255,255,0.08)";
+const FLAP        = "#0a0f2a";
+const FLAP_ALT    = "#141a3f";
+const FLAP_SEAM   = "rgba(255,255,255,0.06)";
+const BLUE        = "#5b8def";
 const GREEN       = "#2fbf71";
 const GOLD        = "#ffb400";
+const PILL_BG     = "rgba(91,141,239,0.16)";
+const PILL_TEXT   = "#8ab4f8";
 
 export function start(ctx) {
   const { root, signal } = ctx;
   const on = (t, type, fn) => t.addEventListener(type, fn, { signal });
 
   /* --------------------------- display --------------------------- */
+  root.style.setProperty("background", BG, "important");
+  root.style.setProperty("position", "relative", "important");
+  root.style.setProperty("overflow", "hidden", "important");
+  root.style.setProperty("border", "0", "important");
+  root.style.setProperty("padding", "0", "important");
+  root.style.setProperty("margin", "0", "important");
+
+  const wrapEl = document.createElement("div");
+  Object.assign(wrapEl.style, {
+    position: "absolute", inset: "0",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: BG, border: "0", padding: "0", margin: "0",
+    overflow: "hidden",
+  });
+
   const canvas = document.createElement("canvas");
   canvas.width = 1280;
   canvas.height = 720;
   Object.assign(canvas.style, {
     display: "block", maxWidth: "100%", maxHeight: "100%",
     aspectRatio: "16 / 9", background: BG,
+    border: "0", padding: "0", margin: "0",
   });
-  const wrapEl = document.createElement("div");
-  Object.assign(wrapEl.style, {
-    width: "100%", height: "100%", display: "flex",
-    alignItems: "center", justifyContent: "center", background: BG,
-  });
+
   wrapEl.append(canvas);
   root.replaceChildren(wrapEl);
   const g = canvas.getContext("2d");
@@ -67,12 +79,12 @@ export function start(ctx) {
 
   /* --------------------------- state ----------------------------- */
   const players = new Map();
-  // states: countdown | running | reveal | leaderboard
+  // countdown | running | reveal | leaderboard
   let state = "countdown";
   let stateTimer = COUNTDOWN;
   let roundStart = 0;
   let roundClock = 0;
-  let aperture = 1;            // 1 = open, 0 = shut
+  let aperture = 1;
   let currentRound = 0;
   let winnerSlots = [];
 
@@ -182,10 +194,6 @@ export function start(ctx) {
   function startRound() {
     if (exiting) return;
     currentRound++;
-    if (currentRound === 1) {
-      // Fresh match: reset totals.
-      for (const p of players.values()) p.total = 0;
-    }
     roundStart = 0;
     roundClock = 0;
     aperture = 1;
@@ -213,37 +221,41 @@ export function start(ctx) {
     }
   }
 
+  // Everyone stopped → reveal the clocks for a few seconds. Buttons
+  // stay on "stopped" so nobody can advance the game early.
   function checkAllStopped() {
     if (state !== "running") return;
     const active = [...players.values()].filter((p) => p.connected);
     if (active.length === 0) return;
     if (!active.every((p) => p.stopped)) return;
 
-    // Winner = highest round score.
+    // Round winner = highest round score.
     let best = -Infinity;
     winnerSlots = [];
     for (const p of active) {
       if (p.score > best) { best = p.score; winnerSlots = [p.slot]; }
       else if (p.score === best) winnerSlots.push(p.slot);
     }
-    // Fold this round's score into each player's match total.
-    for (const p of players.values()) {
-      if (p.connected) p.total += p.score;
-    }
+    // Fold round score into match total.
+    for (const p of active) p.total += p.score;
 
     aperture = 0;
     state = "reveal";
-    stateTimer = REVEAL_SHOW;
+    stateTimer = REVEAL_DURATION;
     ctx.broadcast({ type: "vibrate", ms: [40, 30, 40] });
-    // Button stays at "stopped" during the reveal — no change here.
   }
 
+  // Reveal is done → full-screen leaderboard. Now the phone button
+  // becomes START (rounds 1-2) or PLAY AGAIN (final round).
   function enterLeaderboard() {
     state = "leaderboard";
     const isFinal = currentRound >= TOTAL_ROUNDS;
     for (const p of players.values()) {
       if (p.connected) {
-        ctx.send(p.slot, { type: "stopper-state", state: isFinal ? "replay" : "start" });
+        ctx.send(p.slot, {
+          type: "stopper-state",
+          state: isFinal ? "replay" : "start",
+        });
       }
     }
   }
@@ -253,7 +265,11 @@ export function start(ctx) {
     const active = [...players.values()].filter((p) => p.connected);
     if (active.length === 0) return;
     if (!active.every((p) => p.ready)) return;
-    if (currentRound >= TOTAL_ROUNDS) currentRound = 0;   // start a fresh match
+    if (currentRound >= TOTAL_ROUNDS) {
+      // Fresh match: reset totals.
+      for (const p of players.values()) p.total = 0;
+      currentRound = 0;
+    }
     startRound();
   }
 
@@ -301,15 +317,16 @@ export function start(ctx) {
 
     if (state === "reveal") {
       stateTimer -= dt;
-      // Iris opens during the first REVEAL_ANIM seconds, then holds open.
-      const elapsed = REVEAL_SHOW - stateTimer;
+      // Open the irises during the first REVEAL_ANIM seconds, then hold
+      // so the frozen times are readable for the rest of the reveal.
+      const elapsed = REVEAL_DURATION - stateTimer;
       const t = Math.max(0, Math.min(1, elapsed / REVEAL_ANIM));
       aperture = easeInOut(t);
       if (stateTimer <= 0) enterLeaderboard();
       return;
     }
 
-    // leaderboard: waiting for taps, nothing to update.
+    // leaderboard: waiting for taps.
   }
 
   /* ---------------------------- draw ----------------------------- */
@@ -332,6 +349,7 @@ export function start(ctx) {
     return `${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
   }
 
+  /* ---------- 8-blade iris ---------- */
   function drawAperture(cx, cy, R, ap) {
     if (ap >= 0.995) return;
 
@@ -348,8 +366,10 @@ export function start(ctx) {
     for (let i = 0; i < N; i++) {
       const a0 = i * step;
       const a1 = (i + 1) * step;
+
       g.beginPath();
       g.arc(cx, cy, R, a0, a1);
+
       if (r > 0.6) {
         g.lineTo(cx + r * Math.cos(a1 + rot),
                  cy + r * Math.sin(a1 + rot));
@@ -358,6 +378,7 @@ export function start(ctx) {
         g.lineTo(cx, cy);
       }
       g.closePath();
+
       g.fillStyle = (i % 2 === 0) ? FLAP : FLAP_ALT;
       g.fill();
       g.strokeStyle = FLAP_SEAM;
@@ -367,7 +388,7 @@ export function start(ctx) {
 
     const vg = g.createRadialGradient(cx, cy, Math.max(0, r * 0.6), cx, cy, R);
     vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.5)");
+    vg.addColorStop(1, "rgba(0,0,0,0.55)");
     g.fillStyle = vg;
     g.beginPath();
     g.arc(cx, cy, R, 0, TAU);
@@ -377,23 +398,30 @@ export function start(ctx) {
   }
 
   function drawClockFace(cx, cy, R, timeVal, hidden, color) {
-    // Housing
+    g.save();
+    g.shadowColor = CARD_SHADOW;
+    g.shadowBlur = 16;
+    g.shadowOffsetY = 5;
     g.beginPath();
     g.arc(cx, cy, R * 1.02, 0, TAU);
     g.fillStyle = CARD;
     g.fill();
-    g.strokeStyle = CARD_EDGE;
+    g.restore();
+
+    g.beginPath();
+    g.arc(cx, cy, R * 1.02, 0, TAU);
+    g.strokeStyle = "rgba(255,255,255,0.6)";
     g.lineWidth = 1.5;
     g.stroke();
 
-    // Tick marks
     for (let i = 0; i < 12; i++) {
       const a = i * (TAU / 12) - Math.PI / 2;
-      const r0 = R * 0.86, r1 = R * 0.92;
+      const r0 = R * 0.86;
+      const r1 = R * 0.92;
       g.beginPath();
       g.moveTo(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a));
       g.lineTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a));
-      g.strokeStyle = "rgba(230,240,255,0.18)";
+      g.strokeStyle = "rgba(26,31,61,0.22)";
       g.lineWidth = 2;
       g.lineCap = "round";
       g.stroke();
@@ -426,21 +454,16 @@ export function start(ctx) {
     // Name card
     const pad = Math.max(8, Math.min(r.w, r.h) * 0.035);
     const cardH = Math.max(24, Math.min(r.h * 0.09, 34));
-    const cardW = Math.min(r.w - pad * 2, 220);
+    const cardW = Math.min(r.w - pad * 2, 240);
 
     g.save();
     g.shadowColor = CARD_SHADOW;
-    g.shadowBlur = 10;
+    g.shadowBlur = 12;
     g.shadowOffsetY = 3;
     g.fillStyle = CARD;
     roundRect(r.x + pad, r.y + pad, cardW, cardH, cardH / 2);
     g.fill();
     g.restore();
-
-    g.strokeStyle = CARD_EDGE;
-    g.lineWidth = 1;
-    roundRect(r.x + pad + 0.5, r.y + pad + 0.5, cardW - 1, cardH - 1, cardH / 2);
-    g.stroke();
 
     const dotR = cardH * 0.22;
     g.fillStyle = color;
@@ -468,8 +491,8 @@ export function start(ctx) {
     else if (p.stopped) displayTime = p.stopTime;
     else displayTime = roundClock;
 
-    // Suppress digits while the iris is essentially shut.
-    const hidden = aperture < 0.08;
+    // Suppress digits only while the iris is genuinely shut during play.
+    const hidden = (state === "running" && aperture < 0.08);
 
     drawClockFace(cx, cy, R, displayTime, hidden, color);
     drawAperture(cx, cy, R, aperture);
@@ -494,8 +517,9 @@ export function start(ctx) {
         g.fillText("Tap when it's 10.00", cx, statusY);
       }
     } else if (state === "reveal") {
+      // Frozen time is on the clock face; the strip shows the score.
       const isWinner = winnerSlots.includes(p.slot);
-      g.fillStyle = isWinner ? GOLD : BLUE;
+      g.fillStyle = isWinner ? GOLD : PILL_TEXT;
       g.font = `800 ${Math.max(13, r.h * 0.038)}px Fredoka, system-ui, sans-serif`;
       g.fillText(`Score ${p.score}`, cx, statusY);
     }
@@ -510,7 +534,7 @@ export function start(ctx) {
     const isFinal = currentRound >= TOTAL_ROUNDS;
     const active = [...players.values()].filter((p) => p.connected);
 
-    // Sort by round score descending; ties broken by total descending, then name.
+    // Sort by round score descending; ties by total, then name.
     const rows = [...active].sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       if (b.total !== a.total) return b.total - a.total;
@@ -522,51 +546,47 @@ export function start(ctx) {
     // Title
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillStyle = INK;
-    g.font = "800 40px Fredoka, system-ui, sans-serif";
-    g.fillText(
-      isFinal ? "Final Results" : `Round ${currentRound} Results`,
-      W / 2, HEADER_H + 42
-    );
+    g.fillStyle = INK_LIGHT;
+    g.font = "800 34px Fredoka, system-ui, sans-serif";
+    g.fillText(isFinal ? "Final Results" : `Round ${currentRound} Results`, W / 2, HEADER_H + 34);
 
-    // Ready counter
+    // Ready counter / prompt
     const readyCount = active.filter((p) => p.ready).length;
     g.fillStyle = MUTED;
-    g.font = "600 15px Fredoka, system-ui, sans-serif";
+    g.font = "600 14px Fredoka, system-ui, sans-serif";
     g.fillText(
       isFinal
         ? `Tap PLAY AGAIN to start a fresh match · ${readyCount} / ${active.length} ready`
         : `Tap START for the next round · ${readyCount} / ${active.length} ready`,
-      W / 2, HEADER_H + 78
+      W / 2, HEADER_H + 62
     );
 
     // Table geometry
-    const tableX = 120;
+    const tableX = 140;
     const tableW = W - tableX * 2;
-    const rowH = Math.min(46, (H - HEADER_H - 200) / Math.max(1, rows.length));
-    const headerY = HEADER_H + 118;
-    const firstRowY = headerY + 30;
+    const rowH = Math.min(46, (H - HEADER_H - 190) / Math.max(1, rows.length));
+    const headerY = HEADER_H + 100;
+    const firstRowY = headerY + 26;
 
-    // Column x-positions (relative to W)
-    const colRank  = tableX + 30;
-    const colName  = tableX + 90;
-    const colTime  = tableX + tableW * 0.55;
+    const colRank  = tableX + 20;
+    const colName  = tableX + 80;
+    const colTime  = tableX + tableW * 0.54;
     const colScore = tableX + tableW * 0.72;
-    const colTotal = tableX + tableW * 0.88;
+    const colTotal = tableX + tableW * 0.90;
 
     // Header row
     g.textBaseline = "middle";
-    g.font = "700 13px Fredoka, system-ui, sans-serif";
+    g.font = "700 12px Fredoka, system-ui, sans-serif";
     g.fillStyle = FAINT;
     g.textAlign = "left";
-    g.fillText("RANK", colRank - 10, headerY);
+    g.fillText("RANK", colRank, headerY);
     g.fillText("PLAYER", colName, headerY);
     g.textAlign = "right";
     g.fillText("TIME", colTime, headerY);
-    g.fillText("SCORE", colScore, headerY);
+    g.fillText("ROUND", colScore, headerY);
     g.fillText("TOTAL", colTotal, headerY);
 
-    // Divider
+    // Divider under the header
     g.strokeStyle = DIVIDER;
     g.lineWidth = 1;
     g.beginPath();
@@ -580,85 +600,79 @@ export function start(ctx) {
       const name = (info && info.name) || `P${p.slot + 1}`;
       const color = (info && info.color) || BLUE;
       const y = firstRowY + i * rowH + rowH / 2;
-
       const isWinner = winnerSlots.includes(p.slot);
 
-      // Rank number (ties share the same number)
-      let rank = 1;
-      for (let j = 0; j < i; j++) if (rows[j].score === p.score) { rank = j + 1; break; }
-      if (i > 0 && rows[i - 1].score === p.score) {
-        // Same as previous player's rank
-        rank = 1;
-        for (let j = 0; j < i; j++) if (rows[j].score === p.score) { rank = j + 1; break; }
-      } else {
-        rank = i + 1;
+      // Rank with ties sharing the top rank of their group.
+      let rank = i + 1;
+      for (let j = i - 1; j >= 0; j--) {
+        if (rows[j].score === p.score) rank = j + 1;
+        else break;
       }
 
-      // Faint row separator
-      g.strokeStyle = DIVIDER;
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(tableX, y + rowH / 2 - 0.5);
-      g.lineTo(tableX + tableW, y + rowH / 2 - 0.5);
-      g.stroke();
+      // Row separator (skip the first row's top border)
+      if (i > 0) {
+        g.strokeStyle = DIVIDER;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(tableX, y - rowH / 2 + 0.5);
+        g.lineTo(tableX + tableW, y - rowH / 2 + 0.5);
+        g.stroke();
+      }
 
       // Rank
       g.textAlign = "left";
       g.textBaseline = "middle";
       g.font = "800 18px Fredoka, system-ui, sans-serif";
       g.fillStyle = isWinner ? GOLD : MUTED;
-      g.fillText(String(rank), colRank - 10, y);
+      g.fillText(String(rank), colRank, y);
 
       // Colour dot
       g.fillStyle = color;
       g.beginPath();
-      g.arc(colName - 16, y, 6, 0, TAU);
+      g.arc(colName - 14, y, 6, 0, TAU);
       g.fill();
 
       // Name
-      g.fillStyle = INK;
-      g.font = `700 20px Fredoka, system-ui, sans-serif`;
+      g.fillStyle = INK_LIGHT;
+      g.font = "700 18px Fredoka, system-ui, sans-serif";
       g.textAlign = "left";
       g.fillText(name, colName, y);
 
       // Time
-      g.fillStyle = INK;
-      g.font = `600 20px "SF Mono", Menlo, Consolas, monospace`;
+      g.fillStyle = INK_LIGHT;
+      g.font = "600 18px 'SF Mono', Menlo, Consolas, monospace";
       g.textAlign = "right";
       g.fillText(formatClock(p.stopTime), colTime, y);
 
       // Round score
-      g.fillStyle = isWinner ? GOLD : BLUE;
-      g.font = `800 22px Fredoka, system-ui, sans-serif`;
+      g.fillStyle = isWinner ? GOLD : PILL_TEXT;
+      g.font = "800 20px Fredoka, system-ui, sans-serif";
       g.fillText(String(p.score), colScore, y);
 
-      // Total
+      // Match total
       g.fillStyle = MUTED;
-      g.font = `700 18px Fredoka, system-ui, sans-serif`;
+      g.font = "700 16px Fredoka, system-ui, sans-serif";
       g.fillText(String(p.total), colTotal, y);
 
       // Ready tick
       if (p.ready) {
         g.fillStyle = GREEN;
-        g.font = `800 20px Fredoka, system-ui, sans-serif`;
+        g.font = "800 18px Fredoka, system-ui, sans-serif";
         g.textAlign = "left";
-        g.fillText("✓", colTotal + 60, y);
+        g.fillText("✓", colTotal + 44, y);
       }
     });
 
-    // Footer instruction
+    // Footer
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillStyle = MUTED;
-    g.font = "500 14px Fredoka, system-ui, sans-serif";
-    g.fillText(
-      "Host: press Exit to leave the game",
-      W / 2, H - 24
-    );
+    g.fillStyle = FAINT;
+    g.font = "500 13px Fredoka, system-ui, sans-serif";
+    g.fillText("Host: press Exit to leave the game", W / 2, H - 20);
   }
 
   function drawHeader() {
-    g.fillStyle = BG_CELL;
+    g.fillStyle = BG_HEADER;
     g.fillRect(0, 0, canvas.width, HEADER_H);
     g.strokeStyle = DIVIDER;
     g.lineWidth = 1;
@@ -667,26 +681,36 @@ export function start(ctx) {
     g.lineTo(canvas.width, HEADER_H + 0.5);
     g.stroke();
 
-    g.fillStyle = INK;
-    g.font = "800 15px Fredoka, system-ui, sans-serif";
+    g.fillStyle = INK_LIGHT;
+    g.font = "800 16px Fredoka, system-ui, sans-serif";
     g.textAlign = "left";
     g.textBaseline = "middle";
     g.fillText("STOP CLOCK", 20, HEADER_H / 2 + 1);
 
-    g.fillStyle = MUTED;
-    g.font = "700 14px Fredoka, system-ui, sans-serif";
+    const roundText = `Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`;
+    g.font = "700 13px Fredoka, system-ui, sans-serif";
+    const tw = g.measureText(roundText).width;
+    const pillW = tw + 24;
+    const pillX = canvas.width / 2 - pillW / 2;
+    const pillY = HEADER_H / 2 - 12;
+
+    g.fillStyle = PILL_BG;
+    roundRect(pillX, pillY, pillW, 24, 12);
+    g.fill();
+
+    g.fillStyle = PILL_TEXT;
     g.textAlign = "center";
-    g.fillText(`Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`, canvas.width / 2, HEADER_H / 2 + 1);
+    g.fillText(roundText, canvas.width / 2, HEADER_H / 2 + 1);
 
     g.fillStyle = FAINT;
     g.font = "600 13px Fredoka, system-ui, sans-serif";
     g.textAlign = "right";
-    g.fillText("Target 10.00 · Score = 500 − |t × 100 − 1000|", canvas.width - 20, HEADER_H / 2 + 1);
+    g.fillText("Target 10.00 · Perfect = 500", canvas.width - 20, HEADER_H / 2 + 1);
   }
 
   function drawCountdown() {
     const W = canvas.width, H = canvas.height;
-    g.fillStyle = "rgba(10,15,21,0.92)";
+    g.fillStyle = "rgba(30,34,70,0.94)";
     g.fillRect(0, HEADER_H, W, H - HEADER_H);
 
     g.textAlign = "center";
@@ -699,7 +723,7 @@ export function start(ctx) {
     g.font = "900 150px Fredoka, system-ui, sans-serif";
     g.fillText(txt, W / 2, H / 2 - 20);
 
-    g.fillStyle = INK;
+    g.fillStyle = INK_LIGHT;
     g.font = "700 22px Fredoka, system-ui, sans-serif";
     g.fillText("Tap STOP when you think 10.00 s have passed", W / 2, H / 2 + 100);
 
