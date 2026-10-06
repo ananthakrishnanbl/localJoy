@@ -97,7 +97,8 @@ export const GAMES = [
       tags: ["Precision", "Party"],
       controller: "turner",
       entry: "/js/game/loop-rider/main.js",
-    }
+    },
+    {
       id: "tdm",
       title: "Team Deathmatch",
       tagline: "Red vs Blue. Or go solo and fight everyone.",
@@ -124,7 +125,7 @@ export const GAMES = [
       emoji: "⏱️",
       color: "#4285f4",
       minPlayers: 1,
-      maxPlayers: 4,
+      maxPlayers: 10,
       rating: 4.5,
       tags: ["Timing", "Precision", "Party"],
       controller: "stopper",

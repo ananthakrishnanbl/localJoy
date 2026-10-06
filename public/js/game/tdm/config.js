@@ -39,6 +39,23 @@ export const GUNS = {
 };
 export const START_GUNS = ["g1", "g2"];    // carried on every spawn; one of them (random) is in hand
 
+// SCOPE (see scope.js). Tap SCOPE (or double-tap the look area) on the phone: the view becomes a scope and zooms by the gun's RANGE.
+//   zoom    comes from the range: the further a gun shoots, the closer the scope pulls the view (SCOPE_ZOOM.min up to SCOPE_ZOOM.max)
+//   sens    extra look-speed multiplier while fully zoomed (1 = none). Turning is ALSO divided by the zoom, so a high zoom is slow and precise
+//   speed   walking speed multiplier while fully zoomed
+// Scope switches itself off when you swap, pick up, reload or die. You cannot scope while reloading.
+export const SCOPE_EASE = 12;              // how fast the zoom eases in / out (higher = snappier)
+export const SCOPE_ZOOM = { min: 1.25, max: 3 };   // the shortest-range gun zooms min, the longest-range gun zooms max (the map is small, so 3x is the top)
+const _r = Object.values(GUNS).map((g) => g.range), R_MIN = Math.min(..._r), R_MAX = Math.max(..._r);
+const zoomOf = (id) => +(SCOPE_ZOOM.min + ((GUNS[id].range - R_MIN) / (R_MAX - R_MIN)) * (SCOPE_ZOOM.max - SCOPE_ZOOM.min)).toFixed(1);
+export const SCOPE = {
+  g3: { zoom: zoomOf("g3"), sens: 0.9,  speed: 0.9  },      // HORNET
+  g1: { zoom: zoomOf("g1"), sens: 0.9,  speed: 0.85 },      // STINGER
+  g2: { zoom: zoomOf("g2"), sens: 0.9,  speed: 0.8  },      // FALCON
+  g5: { zoom: zoomOf("g5"), sens: 0.85, speed: 0.7  },      // THUNDER
+  g4: { zoom: zoomOf("g4"), sens: 0.85, speed: 0.55 },      // REAPER
+};
+
 // First-person gun, drawn in its own pass with its own camera (see models.js).
 export const VIEW_GUN = { fov: 55, depth: 0.55, ax: 0.30, ay: -0.52, maxLen: 0.5, scale: 0.5 };
 // Third-person gun in the right hand (numbers are in the arm-right bone's own space).

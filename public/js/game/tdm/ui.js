@@ -198,6 +198,7 @@ export function createUI(S) {
       el.append(dmg, hdir, xh, hm, me, obj, msg, dead);
       vpLayer.append(el);
       views.push({ ch, el, dmg, hdir, ammoFill, ammoTxt, gunA, gunB, hm, dot, nm, hp, trail, fill, hpTxt, kd, obj, arrow, objTxt, msg, dead, cache: {} });
+      ch.view = views[views.length - 1];                      // so scope.js can reach this soldier's cell
     });
     if (n === 3) {                                            // the 4th cell shows the scoreboard
       statsEl = h("div", "tdm-stats");
@@ -274,7 +275,7 @@ export function createUI(S) {
 
   /* ---------------- drawing ---------------- */
   function drawViewGun(ch, aspect) {                              // first-person gun, on top of the world, with its own camera
-    if (!ch.alive) return;
+    if (!ch.alive || ch._gunHid) return;                          // (no gun while scoped: the scope picture replaces it)
     ch.vmAspect = aspect;
     viewGunPos(ch, ch.gun.group.position);
     ch.gun.group.rotation.x = ch.kick * 0.08;

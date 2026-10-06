@@ -60,6 +60,24 @@ export const CARRY_FLAG = { pos: [-0.45, 0.3, -0.95], scale: 0.65 };
 export const TEAM_TINT = 0.45;                    // how strongly a soldier is tinted with his team colour (0 = plain character, 1 = fully coloured)
 export const ANIM = { idle: "holding-right", idleAlt: "idle", walk: "walk", run: "sprint", shoot: "holding-right-shoot", die: "die", pick: "pick-up" };
 export const HIT_FLASH = 0.6;                     // seconds the red damage flash lasts
+
+// SCOPE. Tap SCOPE (or double-tap the look area) on the phone: the view becomes a scope (round lens, black housing, reticle)
+// and zooms in by the gun's RANGE. Tap again to leave the scope.
+//   zoom    comes from the range: the further a gun shoots, the closer the scope pulls the view (1.25x up to 3x, see SCOPE_ZOOM)
+//   sens    extra look-speed multiplier while fully zoomed (1 = none). Turning is ALSO divided by the zoom, so a high zoom is slow and precise
+//   speed   walking speed multiplier while fully zoomed
+// Scope switches itself off when you swap, pick up, reload, die or the match ends. You cannot scope while reloading.
+export const SCOPE_EASE = 12;                     // how fast the zoom eases in / out (higher = snappier)
+export const SCOPE_ZOOM = { min: 1.25, max: 3 };   // the shortest-range gun zooms min, the longest-range gun zooms max (the map is small, so 3x is the top)
+const _r = Object.values(GUNS).map((g) => g.range), R_MIN = Math.min(..._r), R_MAX = Math.max(..._r);
+const zoomOf = (id) => +(SCOPE_ZOOM.min + ((GUNS[id].range - R_MIN) / (R_MAX - R_MIN)) * (SCOPE_ZOOM.max - SCOPE_ZOOM.min)).toFixed(1);
+export const SCOPE = {
+  g3: { zoom: zoomOf("g3"), sens: 0.9,  speed: 0.9  },      // HORNET
+  g1: { zoom: zoomOf("g1"), sens: 0.9,  speed: 0.85 },      // STINGER
+  g2: { zoom: zoomOf("g2"), sens: 0.9,  speed: 0.8  },      // FALCON
+  g5: { zoom: zoomOf("g5"), sens: 0.85, speed: 0.7  },      // THUNDER
+  g4: { zoom: zoomOf("g4"), sens: 0.85, speed: 0.55 },      // REAPER
+};
 /* ============================================ */
 
 export const TEAMS = [
