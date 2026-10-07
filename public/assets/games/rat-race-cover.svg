@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <clipPath id="rrCoverClip"><rect width="400" height="400" rx="28"/></clipPath>
+
+    <radialGradient id="rrCoverFog" cx="50%" cy="50%" r="62%">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0"/>
+      <stop offset="22%"  stop-color="#000000" stop-opacity="0.12"/>
+      <stop offset="50%"  stop-color="#000000" stop-opacity="0.62"/>
+      <stop offset="78%"  stop-color="#000000" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.99"/>
+    </radialGradient>
+
+    <radialGradient id="rrCoverHeroGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ff8a8e" stop-opacity="0.9"/>
+      <stop offset="38%"  stop-color="#e5484d" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#e5484d" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="rrCoverCheeseGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ffe28e" stop-opacity="0.95"/>
+      <stop offset="42%"  stop-color="#ffc850" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ffc850" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="rrCoverPillGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#6ee89a" stop-opacity="0.85"/>
+      <stop offset="50%"  stop-color="#3ecf6e" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#3ecf6e" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Rat mascot, drawn exactly like the game: r=20 reference size, facing east -->
+    <g id="rrCoverRat">
+      <path d="M -17.1 0 Q -32.3 -9.4 -26.6 -17.2"
+            stroke="currentColor" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+      <circle cx="11.6" cy="-12.4" r="6.4" fill="currentColor"/>
+      <circle cx="11.6" cy="12.4"  r="6.4" fill="currentColor"/>
+      <ellipse cx="0" cy="0" rx="19" ry="15.6" fill="currentColor"/>
+      <circle cx="13.6" cy="0" r="11.6" fill="currentColor"/>
+      <circle cx="11.6" cy="-12.4" r="3.2" fill="#ffb8c8"/>
+      <circle cx="11.6" cy="12.4"  r="3.2" fill="#ffb8c8"/>
+      <circle cx="16.5" cy="-4.06" r="2.6" fill="#10202b"/>
+      <circle cx="16.5" cy="4.06"  r="2.6" fill="#10202b"/>
+      <circle cx="17.3" cy="-4.9"  r="1" fill="#ffffff" opacity="0.85"/>
+      <circle cx="17.3" cy="3.3"   r="1" fill="#ffffff" opacity="0.85"/>
+      <circle cx="24" cy="0" r="2.2" fill="#ff8fa8"/>
+      <path d="M 21.7 -3 L 31.6 -8 M 21.7 3 L 31.6 8"
+            stroke="#10202b" stroke-opacity="0.45" stroke-width="0.8" stroke-linecap="round"/>
+    </g>
+  </defs>
+
+  <g clip-path="url(#rrCoverClip)">
+    <!-- Dark tunnel backing -->
+    <rect width="400" height="400" fill="#080e16"/>
+
+    <!-- Lit floor -->
+    <rect x="25" y="25" width="350" height="350" fill="#e6f4fb"/>
+
+    <!-- Maze walls, same style as the game -->
+    <g stroke="#2b3d4f" stroke-width="6" stroke-linecap="square" fill="none">
+      <rect x="25" y="25" width="350" height="350"/>
+      <path d="M 75 75 L 175 75 M 275 75 L 375 75"/>
+      <path d="M 25 125 L 75 125 M 125 125 L 225 125 M 325 125 L 375 125"/>
+      <path d="M 75 175 L 125 175 M 175 175 L 225 175 M 275 175 L 375 175"/>
+      <path d="M 25 225 L 75 225 M 125 225 L 175 225 M 225 225 L 325 225"/>
+      <path d="M 75 275 L 175 275 M 275 275 L 375 275"/>
+      <path d="M 25 325 L 75 325 M 125 325 L 175 325 M 225 325 L 275 325"/>
+      <path d="M 75 25 L 75 75 M 75 125 L 75 175 M 75 225 L 75 275"/>
+      <path d="M 125 75 L 125 125 M 125 175 L 125 225 M 125 275 L 125 325"/>
+      <path d="M 175 25 L 175 75 M 175 125 L 175 175 M 175 225 L 175 275 M 175 325 L 175 375"/>
+      <path d="M 225 75 L 225 125 M 225 175 L 225 225 M 225 275 L 225 325"/>
+      <path d="M 275 25 L 275 75 M 275 125 L 275 175 M 275 225 L 275 275"/>
+      <path d="M 325 75 L 325 125 M 325 175 L 325 225 M 325 275 L 325 325"/>
+    </g>
+
+    <!-- Fog-of-war -->
+    <rect width="400" height="400" fill="url(#rrCoverFog)"/>
+
+    <!-- Cheese, top-right, glowing through the fog -->
+    <circle cx="338" cy="72" r="72" fill="url(#rrCoverCheeseGlow)"/>
+    <g transform="translate(338 72)">
+      <path d="M -13 7.2 L 13 7.2 L 3.9 -9.8 Z"
+            fill="#ffc850" stroke="#b07a12" stroke-width="1.3" stroke-linejoin="round"/>
+      <path d="M -9.8 5.8 L -1.3 5.8 L -3.9 -2.3 Z" fill="#ffffff" opacity="0.5"/>
+      <circle cx="-4.6" cy="3.3"  r="1.7" fill="#c99120"/>
+      <circle cx="3.9"  cy="2.3"  r="1.3" fill="#c99120"/>
+      <circle cx="-0.7" cy="-0.7" r="1.2" fill="#c99120"/>
+      <circle cx="0.7"  cy="5.5"  r="0.9" fill="#c99120"/>
+    </g>
+
+    <!-- Green pill trap, bottom-left -->
+    <circle cx="78" cy="322" r="52" fill="url(#rrCoverPillGlow)"/>
+    <g transform="translate(78 322) rotate(-36)">
+      <rect x="-3.6" y="-7" width="7.2" height="14" rx="3.6" ry="3.6"
+            fill="#3ecf6e" stroke="#10202b" stroke-opacity="0.55" stroke-width="1"/>
+      <line x1="-3.6" y1="0" x2="3.6" y2="0"
+            stroke="#ffffff" stroke-opacity="0.75" stroke-width="0.9"/>
+      <ellipse cx="-1.7" cy="-3.9" rx="1" ry="0.6" fill="#ffffff" opacity="0.7"/>
+    </g>
+
+    <!-- Rival rat, green, fading into fog on the right -->
+    <use href="#rrCoverRat"
+         transform="translate(330 305) scale(0.85)"
+         style="color:#3ecf6e" opacity="0.72"/>
+
+    <!-- Hero rat, warm colour, brightest thing on the canvas -->
+    <circle cx="200" cy="200" r="88" fill="url(#rrCoverHeroGlow)"/>
+    <use href="#rrCoverRat"
+         transform="translate(200 200) scale(1.15)"
+         style="color:#bb596f"/>
+  </g>
+</svg>

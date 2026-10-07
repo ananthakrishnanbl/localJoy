@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
+  <defs>
+    <radialGradient id="rrBanFog" cx="46%" cy="52%" r="58%">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0"/>
+      <stop offset="20%"  stop-color="#000000" stop-opacity="0.1"/>
+      <stop offset="48%"  stop-color="#000000" stop-opacity="0.55"/>
+      <stop offset="75%"  stop-color="#000000" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="1"/>
+    </radialGradient>
+
+    <radialGradient id="rrBanHeroGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ff8a8e" stop-opacity="0.85"/>
+      <stop offset="35%"  stop-color="#e5484d" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#e5484d" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="rrBanCheeseGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ffe28e" stop-opacity="0.95"/>
+      <stop offset="42%"  stop-color="#ffc850" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#ffc850" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="rrBanPillGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#6ee89a" stop-opacity="0.9"/>
+      <stop offset="50%"  stop-color="#3ecf6e" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#3ecf6e" stop-opacity="0"/>
+    </radialGradient>
+
+    <g id="rrBanRat">
+      <path d="M -17.1 0 Q -32.3 -9.4 -26.6 -17.2"
+            stroke="currentColor" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+      <circle cx="11.6" cy="-12.4" r="6.4" fill="currentColor"/>
+      <circle cx="11.6" cy="12.4"  r="6.4" fill="currentColor"/>
+      <ellipse cx="0" cy="0" rx="19" ry="15.6" fill="currentColor"/>
+      <circle cx="13.6" cy="0" r="11.6" fill="currentColor"/>
+      <circle cx="11.6" cy="-12.4" r="3.2" fill="#ffb8c8"/>
+      <circle cx="11.6" cy="12.4"  r="3.2" fill="#ffb8c8"/>
+      <circle cx="16.5" cy="-4.06" r="2.6" fill="#10202b"/>
+      <circle cx="16.5" cy="4.06"  r="2.6" fill="#10202b"/>
+      <circle cx="17.3" cy="-4.9"  r="1" fill="#ffffff" opacity="0.85"/>
+      <circle cx="17.3" cy="3.3"   r="1" fill="#ffffff" opacity="0.85"/>
+      <circle cx="24" cy="0" r="2.2" fill="#ff8fa8"/>
+      <path d="M 21.7 -3 L 31.6 -8 M 21.7 3 L 31.6 8"
+            stroke="#10202b" stroke-opacity="0.45" stroke-width="0.8" stroke-linecap="round"/>
+    </g>
+  </defs>
+
+  <!-- Tunnel backing + lit floor -->
+  <rect width="1200" height="675" fill="#080e16"/>
+  <rect width="1200" height="675" fill="#e6f4fb"/>
+
+  <!-- Maze walls -->
+  <g stroke="#2b3d4f" stroke-width="7" stroke-linecap="square" fill="none">
+    <!-- Horizontal walls -->
+    <path d="M 100 100 L 400 100 M 500 100 L 800 100 M 900 100 L 1200 100"/>
+    <path d="M 0 200 L 200 200 M 400 200 L 600 200 M 800 200 L 1000 200"/>
+    <path d="M 100 300 L 300 300 M 500 300 L 700 300 M 900 300 L 1100 300"/>
+    <path d="M 0 400 L 200 400 M 400 400 L 600 400 M 800 400 L 1000 400"/>
+    <path d="M 100 500 L 300 500 M 500 500 L 800 500 M 900 500 L 1100 500"/>
+    <path d="M 0 600 L 200 600 M 400 600 L 600 600 M 800 600 L 1000 600"/>
+
+    <!-- Vertical walls -->
+    <path d="M 200 0 L 200 100 M 200 200 L 200 300 M 200 400 L 200 500 M 200 600 L 200 675"/>
+    <path d="M 400 100 L 400 200 M 400 300 L 400 400 M 400 500 L 400 600"/>
+    <path d="M 600 0 L 600 100 M 600 200 L 600 300 M 600 400 L 600 500 M 600 600 L 600 675"/>
+    <path d="M 800 100 L 800 200 M 800 300 L 800 400 M 800 500 L 800 600"/>
+    <path d="M 1000 0 L 1000 100 M 1000 200 L 1000 300 M 1000 400 L 1000 500 M 1000 600 L 1000 675"/>
+  </g>
+
+  <!-- Fog-of-war, strongest away from the hero -->
+  <rect width="1200" height="675" fill="url(#rrBanFog)"/>
+
+  <!-- Cheese, glowing in the top-right -->
+  <circle cx="1080" cy="82" r="130" fill="url(#rrBanCheeseGlow)"/>
+  <g transform="translate(1080 82)">
+    <path d="M -28 15.4 L 28 15.4 L 8.4 -21 Z"
+          fill="#ffc850" stroke="#b07a12" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M -21 12.6 L -2.8 12.6 L -8.4 -5 Z" fill="#ffffff" opacity="0.5"/>
+    <circle cx="-9.8" cy="7"    r="3.6" fill="#c99120"/>
+    <circle cx="8.4"  cy="5"    r="2.8" fill="#c99120"/>
+    <circle cx="-1.4" cy="-1.4" r="2.5" fill="#c99120"/>
+    <circle cx="1.4"  cy="11.8" r="2"   fill="#c99120"/>
+  </g>
+
+  <!-- Green pill trap, in a dead-end corridor, bottom-left -->
+  <circle cx="80" cy="590" r="80" fill="url(#rrBanPillGlow)"/>
+  <g transform="translate(80 590) rotate(-36)">
+    <rect x="-6" y="-11.5" width="12" height="23" rx="6" ry="6"
+          fill="#3ecf6e" stroke="#10202b" stroke-opacity="0.55" stroke-width="1.4"/>
+    <line x1="-6" y1="0" x2="6" y2="0"
+          stroke="#ffffff" stroke-opacity="0.75" stroke-width="1.4"/>
+    <ellipse cx="-3" cy="-6.5" rx="1.7" ry="1" fill="#ffffff" opacity="0.7"/>
+  </g>
+
+  <!-- Rival rats, green, fading into the fog -->
+  <use href="#rrBanRat" transform="translate(770 250) scale(1.25)"
+       style="color:#3ecf6e" opacity="0.9"/>
+  <use href="#rrBanRat" transform="translate(930 430) scale(1.05)"
+       style="color:#3ecf6e" opacity="0.7"/>
+  <use href="#rrBanRat" transform="translate(280 460) scale(0.9)"
+       style="color:#3ecf6e" opacity="0.5"/>
+
+  <!-- Hero rat, warm colour, own glow, brightest subject -->
+  <circle cx="560" cy="350" r="125" fill="url(#rrBanHeroGlow)"/>
+  <use href="#rrBanRat" transform="translate(560 350) scale(1.65)"
+       style="color:#bb596f"/>
+
+  <!-- In-game compass pulse (the yellow disc that helps freezing players) -->
+  <g transform="translate(1135 610)">
+    <circle r="42" fill="#0a1420" fill-opacity="0.88"/>
+    <circle r="42" fill="none" stroke="#ffdc78" stroke-width="4"/>
+    <g transform="rotate(-125)">
+      <path d="M 23 0 L -15 -21 L -15 21 Z" fill="#ffc850"/>
+    </g>
+  </g>
+</svg>
