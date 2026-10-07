@@ -131,6 +131,23 @@ export const GAMES = [
       controller: "stopper",
       entry: "/js/game/stop-clock/main.js",
     },
+    {
+      id: "rat-race",
+      title: "Rat Race",
+      tagline: "Escape the maze before anyone else.",
+      description:
+      "You are a tiny rat in a twisting maze. Move with the joystick; the fog only lifts around the corridors you can actually see. The number on your phone is how many cells you still need to reach the exit — the hotter the word, the closer you are. Reach the exit first to win the round. When everyone presses any button on their controller, a fresh maze appears and the race starts again. The game never ends on its own.",
+      cover:  "/assets/games/rat-race-cover.svg",
+      banner: "/assets/games/rat-race-banner.svg",
+      emoji: "🐀",
+      color: "#3b8bff",
+      minPlayers: 1,
+      maxPlayers: 6,
+      rating: 4.6,
+      tags: ["Maze", "Race", "Party"],
+      controller: "pad",
+      entry: "/js/game/rat-race/main.js",
+    },
 ];
 
 export const getGame = (id) => GAMES.find((g) => g.id === id);
