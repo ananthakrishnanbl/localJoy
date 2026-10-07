@@ -8,14 +8,11 @@
 //   * the rat's colour is the temperature hint (red = hot, blue = freezing)
 //   * other players appear as GREEN rats (identity hidden, you are the only
 //     rat in your own slot colour)
-//   * up to 3 green pills spawn in random DEAD-ENDS of the maze (anywhere,
-//     not necessarily in the freezing area; start-adjacent dead-ends are
-//     excluded so a pill can't be triggered on spawn). Stepping on one
-//     triggers a GLOBAL SHOCKWAVE: every active player is flung BACKWARD
-//     along the shortest path, N cells based on their OWN temperature
-//     bucket at that moment (FREEZING 0 / COLD 4 / COOL 8 / WARM 12 /
-//     HOT 16). The picker gets a free swing if they are FREEZING, and
-//     everyone ahead of them pays. Pill is removed on pickup.
+//   * up to 3 green pills spawn in random DEAD-ENDS of the maze. Stepping
+//     on one FREEZES every OTHER active player for a few seconds, based on
+//     their own temperature bucket at that moment:
+//        HOT 5s · WARM 4s · COOL 2s · COLD 1s · FREEZING 0s
+//     The picker is never frozen by their own trap. Pill is removed.
 //   * movement: joystick OR the Y/X/B/A buttons (Y = up, A = down,
 //     X = left, B = right). Joystick wins if both are used.
 //   * first rat to reach the CHEESE gets 1st place; 20 s window for the rest
@@ -32,23 +29,21 @@ const MOVE_SPEED = 5;
 const COUNTDOWN_TIME = 3.2;
 const DNF_WAIT = 20;
 const COMPASS_PERIOD = 30;
-const COMPASS_DURATION = 10;
+const COMPASS_DURATION = 1;
 const PILL_COUNT = 3;
-const PILL_MIN_GAP = 5;              // Manhattan distance between pills (cells)
-const PILL_START_CLEAR = 3;          // keep pills at least this far from START
-const OTHER_RAT_COLOR = "#3ecf6e";   // all non-self rats are green
+const PILL_MIN_GAP = 5;
+const PILL_START_CLEAR = 3;
+const OTHER_RAT_COLOR = "#3ecf6e";
 
-// Teleport distance (in cells along the shortest path) by temperature bucket.
-// FREEZING is 0: the freezing picker gets a free swing.
-const TELEPORT = {
+// Freeze duration in seconds by the victim's temperature bucket.
+const FREEZE = {
+  HOT: 5,
+  WARM: 4,
+  COOL: 2,
+  COLD: 1,
   FREEZING: 0,
-  COLD: 4,
-  COOL: 8,
-  WARM: 12,
-  HOT: 16,
 };
 
-// Button → movement direction (matches the SNES diamond layout).
 const BUTTON_DIR = {
   Y: "up",
   A: "down",
@@ -75,8 +70,8 @@ function hexToRgb(hex) {
 const rgbaStr = ([r, g, b], a) => `rgba(${r},${g},${b},${a})`;
 
 /* ---------------- Temperature colour scale ---------------- */
-const HOT_RGB = [229, 72, 77];    // #e5484d (site red)
-const COLD_RGB = [59, 139, 255];  // #3b8bff (site blue)
+const HOT_RGB = [229, 72, 77];
+const COLD_RGB = [59, 139, 255];
 
 function tempBucket(ratio) {
   if (ratio < 0.15) return "HOT";
@@ -203,38 +198,6 @@ function exitDirection(maze, distToExit, x, y) {
   return best ? best.dir : null;
 }
 
-// The single step that moves AWAY from the exit (distance increases by 1).
-function awayDirection(maze, distToExit, x, y) {
-  const cur = distToExit[y][x];
-  const cell = maze.cells[y][x];
-  const dirs = [
-    { dx: 0, dy: -1, wall: "n", dir: "n" },
-    { dx: 1, dy: 0,  wall: "e", dir: "e" },
-    { dx: 0, dy: 1,  wall: "s", dir: "s" },
-    { dx: -1, dy: 0, wall: "w", dir: "w" },
-  ];
-  for (const d of dirs) {
-    if (cell[d.wall]) continue;
-    const nx = x + d.dx, ny = y + d.dy;
-    const nd = distToExit[ny]?.[nx] ?? -1;
-    if (nd === cur + 1) return d.dir;
-  }
-  return null;
-}
-
-function teleportAwayFromExit(maze, distToExit, x, y, steps) {
-  let cx = x, cy = y;
-  for (let i = 0; i < steps; i++) {
-    const d = awayDirection(maze, distToExit, cx, cy);
-    if (!d) break;
-    if (d === "n") cy--;
-    else if (d === "s") cy++;
-    else if (d === "e") cx++;
-    else if (d === "w") cx--;
-  }
-  return { x: cx, y: cy };
-}
-
 /* ---------------- Green pill placement (any dead-end) ---------------- */
 function isDeadEnd(cell) {
   let openings = 0;
@@ -251,27 +214,22 @@ function generatePills(maze, distToExit, maxDist, count) {
     for (let x = 1; x < maze.w - 1; x++) {
       const d = distToExit[y][x];
       if (d < 0) continue;
-      // Skip cells too close to the start (start is itself a dead-end).
       if (Math.abs(x - START.x) + Math.abs(y - START.y) < PILL_START_CLEAR) continue;
       all.push({ x, y, d, dead: isDeadEnd(maze.cells[y][x]) });
     }
   }
   if (!all.length) return [];
 
-  // Pool: any dead-end. Fallback (very unlikely with a proper backtracker
-  // maze): the few far cells, so a round never ships with zero pills.
   const deadEnds = all.filter((c) => c.dead);
   const pool = deadEnds.length > 0
     ? deadEnds
     : all.slice().sort((a, b) => b.d - a.d).slice(0, Math.max(count, 8));
 
-  // Shuffle so the same corners don't always get the pills.
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  // Pick up to `count`, keeping them spread apart.
   const pills = [];
   for (const c of pool) {
     if (pills.length >= count) break;
@@ -470,8 +428,8 @@ export function start(ctx) {
   root.replaceChildren(wrap);
 
   const players = new Map();
-  const inputs = new Map();   // slot -> { x, y }   from the joystick
-  const dpad = new Map();     // slot -> { up, down, left, right }  from buttons
+  const inputs = new Map();
+  const dpad = new Map();
 
   let maze = null;
   let exit = { x: 1, y: 1 };
@@ -508,6 +466,7 @@ export function start(ctx) {
       compassUntil: -Infinity,
       pickupFlash: -Infinity,
       noPickupUntil: -Infinity,
+      frozenUntil: -Infinity,
     };
   }
 
@@ -525,6 +484,7 @@ export function start(ctx) {
     p.compassUntil = -Infinity;
     p.pickupFlash = -Infinity;
     p.noPickupUntil = -Infinity;
+    p.frozenUntil = -Infinity;
   }
 
   function newRound() {
@@ -600,12 +560,10 @@ export function start(ctx) {
     }
 
     if (data.type === "button") {
-      // Any press during the ready phase readies the player.
       if (phase === "ready" && data.pressed) {
         const p = players.get(slot);
         if (p) p.ready = true;
       }
-      // Track held direction buttons for movement.
       const dirKey = BUTTON_DIR[data.id];
       if (dirKey) {
         let d = dpad.get(slot);
@@ -616,7 +574,6 @@ export function start(ctx) {
   });
 
   function readInput(p) {
-    // Joystick wins if it is being pushed past the dead zone.
     const stick = inputs.get(p.slot);
     if (stick && Math.hypot(stick.x, stick.y) >= 0.4) {
       return { x: stick.x, y: stick.y };
@@ -632,6 +589,7 @@ export function start(ctx) {
 
   function tryMove(p) {
     if (p.finished || p.dnf) return;
+    if (elapsed < p.frozenUntil) return;   // frozen by a pill — no movement
     const input = readInput(p);
     if (!input) return;
     const { x, y } = input;
@@ -660,61 +618,47 @@ export function start(ctx) {
     if (p.active) tryMove(p);
   }
 
-  // ---- Pill pickup (global shockwave trap) ----
+  // ---- Pill pickup (global freeze trap) ----
   function checkPillPickup(p) {
     if (!p.active || p.finished || p.dnf) return;
     if (elapsed < p.noPickupUntil) return;
+    if (elapsed < p.frozenUntil) return;   // can't pick up while frozen
     const idx = pills.findIndex((pl) => pl.x === p.cellX && pl.y === p.cellY);
     if (idx === -1) return;
 
     pills.splice(idx, 1);
 
-    // Global shockwave: every active player gets flung backward by THEIR OWN
-    // bucket. FREEZING = 0, so the freezing picker is spared and everyone
-    // else eats the hit.
-    let anyMoved = false;
+    // Freeze every OTHER active player for a duration set by their own
+    // temperature bucket. The picker is never affected by their own trap.
+    let anyFrozen = false;
     for (const q of players.values()) {
+      if (q === p) continue;                     // picker is immune
       if (!q.active || q.finished || q.dnf) continue;
       const d = distToExit[q.cellY]?.[q.cellX] ?? -1;
       if (d < 0) continue;
       const bucket = tempBucket(d / maxDist);
-      const steps = TELEPORT[bucket] ?? 0;
-      if (steps <= 0) continue;
+      const secs = FREEZE[bucket] ?? 0;
+      if (secs <= 0) continue;
 
-      const dest = teleportAwayFromExit(maze, distToExit, q.cellX, q.cellY, steps);
-      q.prevX = q.cellX = dest.x;
-      q.prevY = q.cellY = dest.y;
-      q.t = 1;
-      q.noPickupUntil = elapsed + 0.2;
+      // Extend rather than overwrite if they were already frozen.
+      const base = Math.max(elapsed, q.frozenUntil);
+      q.frozenUntil = base + secs;
       q.pickupFlash = elapsed + 0.6;
       ctx.send(q.slot, { type: "vibrate", ms: [80, 40, 80, 40, 80] });
-      anyMoved = true;
+      anyFrozen = true;
     }
 
-    // The picker always gets feedback, even when their own pushback was 0.
+    // The picker always gets feedback, even if nobody was frozen.
     if (elapsed >= p.pickupFlash) {
       p.pickupFlash = elapsed + 0.6;
       p.noPickupUntil = elapsed + 0.2;
       ctx.send(p.slot, { type: "vibrate", ms: [80, 40, 80, 40, 80] });
     }
 
-    if (anyMoved) shockwaveUntil = elapsed + 0.7;
-
-    // Safety: nobody can be pushed ONTO the cheese, but check just in case.
-    for (const q of players.values()) {
-      if (!q.active || q.finished || q.dnf) continue;
-      if (q.cellX === exit.x && q.cellY === exit.y) {
-        q.finished = true;
-        q.place = finishers.length + 1;
-        q.finishTime = elapsed - raceStartElapsed;
-        finishers.push(q.slot);
-        if (raceEndElapsed === null) raceEndElapsed = elapsed + DNF_WAIT;
-        ctx.send(q.slot, { type: "vibrate", ms: [120, 60, 180] });
-      }
-    }
+    if (anyFrozen) shockwaveUntil = elapsed + 0.7;
   }
 
-  // Phone HUD text. No temperature words here.
+  // Phone HUD text.
   function hintFor(p) {
     if (phase === "countdown") return "Get ready";
     if (phase === "ready") {
@@ -726,6 +670,10 @@ export function start(ctx) {
     if (!p.active) return "Waiting for next round";
     if (p.finished) return `${ordinal(p.place)} place - ${p.finishTime.toFixed(2)}s`;
     if (p.dnf)      return "DNF";
+    if (elapsed < p.frozenUntil) {
+      const remain = Math.max(0, p.frozenUntil - elapsed);
+      return `FROZEN ${remain.toFixed(1)}s`;
+    }
     return "";
   }
 
@@ -773,7 +721,7 @@ export function start(ctx) {
       // Pill pickups
       for (const p of players.values()) checkPillPickup(p);
 
-      // Exit detection (cheese)
+      // Exit detection
       for (const p of players.values()) {
         if (!p.active || p.finished || p.dnf) continue;
         if (p.cellX === exit.x && p.cellY === exit.y) {
@@ -922,7 +870,6 @@ export function start(ctx) {
     const vis = visibleCells(maze, p.cellX, p.cellY, VIS_DEPTH);
     const exitK = exit.x * 1000 + exit.y;
 
-    // Floors
     for (const k of vis.set) {
       const x = Math.floor(k / 1000);
       const y = k % 1000;
@@ -935,7 +882,6 @@ export function start(ctx) {
       g.fillRect(sx, sy, cellPx, cellPx);
     }
 
-    // Walls
     const wallW = Math.max(3, cellPx * 0.09);
     for (const k of vis.set) {
       const x = Math.floor(k / 1000);
@@ -958,7 +904,6 @@ export function start(ctx) {
       if (cell.e) g.fillRect(sx + cellPx - wallW, sy, 2, cellPx);
     }
 
-    // Green pills
     for (const pill of pills) {
       const k = pill.x * 1000 + pill.y;
       if (!vis.set.has(k)) continue;
@@ -971,7 +916,6 @@ export function start(ctx) {
       g.globalAlpha = 1;
     }
 
-    // Cheese (the exit)
     if (vis.set.has(exitK)) {
       const d = vis.map.get(exitK);
       const a = Math.max(0.55, 1 - (d / VIS_DEPTH) * 0.5);
@@ -982,21 +926,31 @@ export function start(ctx) {
       g.globalAlpha = 1;
     }
 
-    // Other rats are GREEN
+    // Other rats are GREEN. Show a blue ice ring if they are frozen.
     for (const op of players.values()) {
       if (op.slot === p.slot) continue;
       if (op.finished || op.dnf) continue;
       if (!vis.set.has(op.cellX * 1000 + op.cellY)) continue;
       const ox = lerp(op.prevX, op.cellX, op.t);
       const oy = lerp(op.prevY, op.cellY, op.t);
-      drawRat(g, w2sX(ox) + cellPx / 2, w2sY(oy) + cellPx / 2,
-              cellPx * 0.30, op.dir, OTHER_RAT_COLOR);
+      const oxp = w2sX(ox) + cellPx / 2;
+      const oyp = w2sY(oy) + cellPx / 2;
+      const orr = cellPx * 0.30;
+
+      drawRat(g, oxp, oyp, orr, op.dir, OTHER_RAT_COLOR);
+
+      if (elapsed < op.frozenUntil) {
+        g.strokeStyle = "rgba(159,209,255,0.95)";
+        g.lineWidth = 3;
+        g.beginPath(); g.arc(oxp, oyp, orr * 1.7, 0, Math.PI * 2); g.stroke();
+      }
     }
 
     // Own rat — body colour = temperature
     const ownDist = distToExit[p.cellY]?.[p.cellX] ?? -1;
     const ownTempRGB = ownDist >= 0 ? tempRGB(ownDist / maxDist) : [136, 136, 136];
     const ownColor = rgbStr(ownTempRGB);
+    const ownFrozen = elapsed < p.frozenUntil;
 
     {
       const bxs = w2sX(px) + cellPx / 2;
@@ -1004,11 +958,12 @@ export function start(ctx) {
       const br = cellPx * 0.32;
 
       const glow = g.createRadialGradient(bxs, bys, 0, bxs, bys, br * 2.4);
-      glow.addColorStop(0, rgbaStr(ownTempRGB, 0.55));
+      glow.addColorStop(0, rgbaStr(ownTempRGB, ownFrozen ? 0.25 : 0.55));
       glow.addColorStop(1, rgbaStr(ownTempRGB, 0));
       g.fillStyle = glow;
       g.beginPath(); g.arc(bxs, bys, br * 2.4, 0, Math.PI * 2); g.fill();
 
+      // Red pickup flash
       if (elapsed < p.pickupFlash) {
         const life = (p.pickupFlash - elapsed) / 0.6;
         g.strokeStyle = `rgba(229,72,77,${life})`;
@@ -1019,6 +974,30 @@ export function start(ctx) {
       }
 
       drawRat(g, bxs, bys, br, p.dir, ownColor);
+
+      // Frozen overlay: pulsing ice-blue ring + frost tint
+      if (ownFrozen) {
+        const remain = p.frozenUntil - elapsed;
+        const wob = 1 + Math.sin(elapsed * 12) * 0.04;
+        g.save();
+        g.globalAlpha = 0.55;
+        g.fillStyle = "#bfe3ff";
+        g.beginPath(); g.arc(bxs, bys, br * 1.25, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1;
+        g.strokeStyle = "rgba(159,209,255,0.95)";
+        g.lineWidth = 4;
+        g.beginPath(); g.arc(bxs, bys, br * 1.9 * wob, 0, Math.PI * 2); g.stroke();
+
+        // Remaining-time digits
+        g.font = `800 ${Math.max(12, br * 0.75)}px Fredoka, system-ui, sans-serif`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillStyle = "#0a1420";
+        g.fillText(remain.toFixed(1), bxs, bys + 0.5);
+        g.fillStyle = "#e6f4fb";
+        g.fillText(remain.toFixed(1), bxs, bys);
+        g.restore();
+      }
     }
 
     // Global shockwave pulse
@@ -1030,14 +1009,13 @@ export function start(ctx) {
         vcx0, vcy0, Math.min(vp.w, vp.h) * 0.15,
         vcx0, vcy0, Math.max(vp.w, vp.h) * 0.75,
       );
-      sg.addColorStop(0,   "rgba(229,72,77,0)");
-      sg.addColorStop(0.6, `rgba(229,72,77,${0.18 * pulse})`);
-      sg.addColorStop(1,   `rgba(229,72,77,${0.55 * pulse})`);
+      sg.addColorStop(0,   "rgba(159,209,255,0)");
+      sg.addColorStop(0.6, `rgba(159,209,255,${0.20 * pulse})`);
+      sg.addColorStop(1,   `rgba(159,209,255,${0.55 * pulse})`);
       g.fillStyle = sg;
       g.fillRect(vp.x, vp.y, vp.w, vp.h);
     }
 
-    // Vignette
     const vcx = vp.x + vp.w / 2, vcy = vp.y + vp.h / 2;
     const vg = g.createRadialGradient(
       vcx, vcy, Math.min(vp.w, vp.h) * 0.25,
@@ -1052,7 +1030,6 @@ export function start(ctx) {
     g.lineWidth = 2;
     g.strokeRect(vp.x + 1, vp.y + 1, vp.w - 2, vp.h - 2);
 
-    // Name pill
     const info = ctx.player(p.slot);
     if (info) {
       const fs = Math.max(13, vp.h * 0.032);
@@ -1073,7 +1050,6 @@ export function start(ctx) {
       g.fillText(info.name, lx + 10, ly + 5);
     }
 
-    // 1-second compass pulse
     if (phase === "race" && p.active && !p.finished && !p.dnf && elapsed < p.compassUntil) {
       const dir = exitDirection(maze, distToExit, p.cellX, p.cellY);
       if (dir) {
