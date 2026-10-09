@@ -148,6 +148,23 @@ export const GAMES = [
       controller: "pad",
       entry: "/js/game/rat-race/main.js",
     },
+    {
+      id: "spin-clash",
+      title: "Spin Clash",
+      tagline: "Last top spinning wins",
+      description:
+        "Battle spinning tops in a circular stadium. Steer with the left stick, DASH to smash rivals and JUMP to dodge or slam down - each has a 10 second cooldown. Don't spin out, and don't fly out of the ring!",
+      cover: "/assets/games/spin-clash-cover.svg",
+      banner: "/assets/games/spin-clash-banner.svg",
+      emoji: "🌀",
+      color: "#ff7a3d",
+      minPlayers: 2,
+      maxPlayers: 10,
+      rating: 4.5,
+      tags: ["Battle", "Party", "Physics"],
+      controller: "spinner",
+      entry: "/js/game/spin-clash/main.js",
+    },
 ];
 
 export const getGame = (id) => GAMES.find((g) => g.id === id);
