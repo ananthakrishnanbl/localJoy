@@ -22,7 +22,7 @@ const W = 1280, H = 720;
 const STEP = 1 / 120;
 const TEAM_SELECT_TIMEOUT = 60;
 const SELECT_TIMEOUT = 60;
-const COUNTDOWN_TIME = 3, END_TIME = 25;
+const COUNTDOWN_TIME = 3, END_TIME = 30;
 const FINISH_LINE = 2500;
 const RACE_MAX = 240;            // 4 minutes, then unfinished teams are DNF
 const RESPAWN_TIME = 5;          // seconds between crash / fall and respawn
@@ -30,6 +30,12 @@ const RESPAWN_INVULN = 3;        // seconds of crash immunity after respawn
 const RESPAWN_SPEED = 12;        // m/s rolling start after respawn
 const MAX_TEAMS = Math.min(4, CAR_COLORS.length);
 const WRECK_COLOR = 0x2b2b2b;
+const SPEEDO_MAX = 160;          // km/h at the end of the dial
+const SKID_LAT = 3.0;            // sideways speed (m/s) that leaves skid marks
+const SKID_MAX = 1400;           // skid segments kept on the road
+const MUSIC_ON = false;
+const SKID_SOUND_ON = false;
+
 
 function mulberry(a) {
   return () => {
@@ -40,6 +46,15 @@ function mulberry(a) {
   };
 }
 
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const easeOutBack = (k) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+const easeOutBounce = (k) => {
+  const n = 7.5625, d = 2.75;
+  if (k < 1 / d) return n * k * k;
+  if (k < 2 / d) return n * (k -= 1.5 / d) * k + 0.75;
+  if (k < 2.5 / d) return n * (k -= 2.25 / d) * k + 0.9375;
+  return n * (k -= 2.625 / d) * k + 0.984375;
+};
 const ORD = ["1st", "2nd", "3rd", "4th", "5th"];
 const ordinal = (n) => ORD[n - 1] || n + "th";
 function fmtTime(s) {
@@ -121,7 +136,7 @@ export function start(ctx) {
   scene.add(track.group);
   track.applyAtmosphere(scene);
 
-  const traffic = createTraffic(scene, track, rng);
+  let traffic = createTraffic(scene, track, rng);
   own(traffic);
 
   // ---------- particles ----------
@@ -144,6 +159,195 @@ export function start(ctx) {
       if (p.m.position.y < 0.1) { p.m.position.y = 0.1; p.vy *= -0.3; p.vx *= 0.8; p.vz *= 0.8; }
       p.m.rotation.x += p.rot * dt; p.m.rotation.z += p.rot * dt;
       if (p.life <= 0) { scene.remove(p.m); parts.splice(i, 1); }
+    }
+  }
+
+  // ---------- skid marks ----------
+  const skidPos = new Float32Array(SKID_MAX * 18);
+  const skidGeo = own(new THREE.BufferGeometry());
+  const skidAttr = new THREE.BufferAttribute(skidPos, 3);
+  skidAttr.setUsage(THREE.DynamicDrawUsage);
+  skidGeo.setAttribute("position", skidAttr);
+  skidGeo.setDrawRange(0, 0);
+  const skidMat = own(new THREE.MeshBasicMaterial({
+    color: 0x050505, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  }));
+  const skidMesh = new THREE.Mesh(skidGeo, skidMat);
+  skidMesh.frustumCulled = false;
+  scene.add(skidMesh);
+  let skidHead = 0, skidCount = 0;
+  function addSkidSeg(x0, z0, x1, z1) {
+    const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz);
+    if (len < 1e-4) return;
+    const hw = 0.14, nx = -dz / len * hw, nz = dx / len * hw, y = 0.05;
+    skidPos.set([
+      x0 - nx, y, z0 - nz, x0 + nx, y, z0 + nz, x1 + nx, y, z1 + nz,
+      x0 - nx, y, z0 - nz, x1 + nx, y, z1 + nz, x1 - nx, y, z1 - nz,
+    ], skidHead * 18);
+    skidHead = (skidHead + 1) % SKID_MAX;
+    skidCount = Math.min(SKID_MAX, skidCount + 1);
+    skidGeo.setDrawRange(0, skidCount * 6);
+    skidAttr.needsUpdate = true;
+  }
+  function clearSkids() { skidHead = 0; skidCount = 0; skidGeo.setDrawRange(0, 0); }
+  // marks from the rear wheels while sliding sideways or braking hard
+  function emitSkid(t) {
+    const c = t.car, fx = Math.sin(c.h), fz = Math.cos(c.h), rx = -fz, rz = fx;
+    const fwd = c.vx * fx + c.vz * fz, lat = c.vx * rx + c.vz * rz;
+    const slide = c.speed > 6 && Math.abs(lat) > SKID_LAT;
+    const braking = t.drive.brake && fwd > 12;
+    const on = c.alive && !c.falling && c.y < 0.2 && (slide || braking);
+    t.skidding = on;
+    for (let k = 0; k < 2; k++) {
+      if (!on) { t.skOn[k] = false; continue; }
+      const side = k === 0 ? -0.8 : 0.8;
+      const x = c.x - fx * 1.3 + rx * side, z = c.z - fz * 1.3 + rz * side;
+      if (!t.skOn[k]) { t.skOn[k] = true; t.skx[k] = x; t.skz[k] = z; continue; }
+      const dd = Math.hypot(x - t.skx[k], z - t.skz[k]);
+      if (dd >= 0.7) {
+        if (dd < 4) addSkidSeg(t.skx[k], t.skz[k], x, z);
+        t.skx[k] = x; t.skz[k] = z;
+      }
+    }
+  }
+
+  // ---------- engine sound (pitch follows speed) ----------
+  const engines = [];
+  function startEngines() {
+    if (!ac || engines.length) return;
+    try {
+      for (const t of teams) {
+        const osc = ac.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = 40;
+        const sub = ac.createOscillator(); sub.type = "square"; sub.frequency.value = 20;
+        const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 300;
+        const gain = ac.createGain(); gain.gain.value = 0;
+        osc.connect(lp); sub.connect(lp); lp.connect(gain);
+        let out = gain;
+        if (ac.createStereoPanner) {
+          const pan = ac.createStereoPanner();
+          pan.pan.value = nTeams > 1 ? (t.id / (nTeams - 1)) * 1.2 - 0.6 : 0;
+          gain.connect(pan); out = pan;
+        }
+        out.connect(ac.destination);
+        osc.start(); sub.start();
+        engines.push({ t, osc, sub, lp, gain, skid: makeSkidLoop(t) });
+      }
+    } catch { /* ignore */ }
+  }
+  // ---------- sound helpers: one-shots, tyre screech, music ----------
+  let noiseBuf = null;
+  function getNoise() {
+    if (noiseBuf || !ac) return noiseBuf;
+    const n = ac.sampleRate;
+    noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    return noiseBuf;
+  }
+  function tone(f, when, dur, type, vol, dest) {
+    if (!ac) return;
+    try {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(vol, when);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+      o.connect(g); g.connect(dest || ac.destination);
+      o.start(when); o.stop(when + dur + 0.02);
+    } catch { /* ignore */ }
+  }
+  function noiseHit(when, dur, ftype, freq, vol, dest) {
+    if (!ac) return;
+    try {
+      const src = ac.createBufferSource(); src.buffer = getNoise();
+      const fl = ac.createBiquadFilter(); fl.type = ftype; fl.frequency.value = freq;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(vol, when);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+      src.connect(fl); fl.connect(g); g.connect(dest || ac.destination);
+      src.start(when); src.stop(when + dur + 0.02);
+    } catch { /* ignore */ }
+  }
+  function crashSfx() {
+    if (!ac) return;
+    const n = ac.currentTime;
+    noiseHit(n, 0.7, "lowpass", 1100, 0.30);
+    noiseHit(n, 0.25, "highpass", 2500, 0.14);
+    tone(70, n, 0.5, "sawtooth", 0.12);
+  }
+  function fanfare() {
+    if (!ac) return;
+    const n = ac.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, n + i * 0.12, i === 3 ? 0.7 : 0.18, "triangle", 0.08));
+    tone(784, n + 0.36, 0.7, "square", 0.025);
+  }
+  function sadTune() {
+    if (!ac) return;
+    const n = ac.currentTime;
+    [392, 349, 311, 262].forEach((f, i) => tone(f, n + i * 0.22, 0.3, "triangle", 0.07));
+  }
+
+  // tyre screech: looped noise, volume follows t.skidding
+  function makeSkidLoop(t) {
+    try {
+      const src = ac.createBufferSource(); src.buffer = getNoise(); src.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1800; bp.Q.value = 1.6;
+      const gain = ac.createGain(); gain.gain.value = 0;
+      src.connect(bp); bp.connect(gain);
+      let out = gain;
+      if (ac.createStereoPanner) {
+        const pan = ac.createStereoPanner();
+        pan.pan.value = nTeams > 1 ? (t.id / (nTeams - 1)) * 1.2 - 0.6 : 0;
+        gain.connect(pan); out = pan;
+      }
+      out.connect(ac.destination);
+      src.start();
+      return { src, gain };
+    } catch { return null; }
+  }
+
+  // background music: small procedural loop (Am - F - C - G)
+  const CHORDS = [[110, [0, 3, 7]], [87.31, [0, 4, 7]], [130.81, [0, 4, 7]], [98, [0, 4, 7]]];
+  const ARP = [0, 1, 2, 1, 0, 1, 2, 1];
+  let musicGain = null, musicNext = 0, musicStep = 0;
+  function playMusicStep(i, when) {
+    const [root, tri] = CHORDS[Math.floor(i / 8) % CHORDS.length], k = i % 8;
+    if (k % 2 === 0) tone(root, when, 0.13, "sawtooth", 0.05, musicGain);
+    tone(root * 4 * Math.pow(2, tri[ARP[k]] / 12), when, 0.11, "square", 0.016, musicGain);
+    if (k % 2 === 1) noiseHit(when, 0.04, "highpass", 6000, 0.025, musicGain);
+    if (k === 0 || k === 4) noiseHit(when, 0.09, "lowpass", 220, 0.12, musicGain);   // kick-ish thump
+  }
+  function updateMusic() {
+    if (!ac || ac.state !== "running") return;
+    const now = ac.currentTime;
+    if (!musicGain) {
+      musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(ac.destination);
+      musicNext = now + 0.1;
+    }
+    const want = phase === "select" || phase === "countdown" || phase === "race";
+    musicGain.gain.setTargetAtTime(want ? (phase === "select" ? 0.45 : 0.75) : 0, now, 0.3);
+    if (!want) { musicNext = now + 0.1; return; }
+    if (musicNext < now) musicNext = now + 0.05;
+    while (musicNext < now + 0.25) { playMusicStep(musicStep++, musicNext); musicNext += 0.15; }
+  }
+
+  function updateEngines() {
+    if (MUSIC_ON) 
+      updateMusic();
+    
+    if (!ac || !engines.length) return;
+    const now = ac.currentTime;
+    const live = phase === "countdown" || phase === "race";
+    for (const e of engines) {
+      const t = e.t, c = t.car, v = Math.min(c.speed, TOP) / TOP;
+      const on = live && c.alive && !c.falling && !t.dropped && !t.finished;
+      const g = t.drive.gas ? 1 : 0;
+      const f = 38 + v * 130 + g * 12;
+      e.osc.frequency.setTargetAtTime(f, now, 0.06);
+      e.sub.frequency.setTargetAtTime(f / 2, now, 0.06);
+      e.lp.frequency.setTargetAtTime(260 + v * 900 + g * 150, now, 0.08);
+      e.gain.gain.setTargetAtTime(on ? 0.008 + v * 0.022 + g * 0.008 : 0, now, 0.1);
+      if (e.skid) e.skid.gain.gain.setTargetAtTime(phase === "race" && t.skidding && SKID_SOUND_ON ? 0.05 : 0, now, 0.05);
     }
   }
 
@@ -212,6 +416,7 @@ export function start(ctx) {
       // respawn / race result state
       respawnT: -1, invuln: 0, voided: false, safeS: START_S,
       finished: false, finishTime: 0, place: 0,
+      needle: 0, skx: [0, 0], skz: [0, 0], skOn: [false, false],
     };
 
     roles.set(steer, { team: t, role: "steer" });
@@ -244,7 +449,7 @@ export function start(ctx) {
   let phase = "teamsel";
   let teamT = TEAM_SELECT_TIMEOUT, selectT = SELECT_TIMEOUT, countdownT = COUNTDOWN_TIME, raceT = 0, endT = END_TIME, abortT = 4;
   let pendingEnd = -1, lastTick = 0, hudAcc = 1, showAngle = 0, modeResendT = 0.3;
-  let standings = [], winner = null, banner = null;
+  let standings = [], winner = null, banner = null, confetti = [];
   const finishOrder = [];
 
   // ---------- team selection ----------
@@ -424,6 +629,7 @@ export function start(ctx) {
   function beginCountdown() {
     if (phase !== "select") return;
     phase = "countdown";
+    startEngines();
     countdownT = COUNTDOWN_TIME;
     lastTick = 0;
     for (const t of teams) {
@@ -458,7 +664,7 @@ export function start(ctx) {
     t.respawnT = (t.dropped || t.finished) ? -1 : RESPAWN_TIME;
     t.mesh.setColor(WRECK_COLOR);
     if (!skipBurst) burst(c.x, 1, c.z, 36, [fireM, darkM, sparkM], 14, 1.6, 0.4);
-    beep(90, 0.45, "sawtooth", 0.12);
+    crashSfx();
     if (!silent) {
       vib(t.steer, [100, 50, 200]); vib(t.pedal, [100, 50, 200]);
       sendHud(t.steer, "RESPAWNING..."); sendHud(t.pedal, "RESPAWNING...");
@@ -524,7 +730,7 @@ export function start(ctx) {
     sendHud(t.steer, txt); sendHud(t.pedal, txt);
     vib(t.steer, [150, 80, 150, 80, 300]); vib(t.pedal, [150, 80, 150, 80, 300]);
     banner = { text: "TEAM " + (t.id + 1) + " FINISHED " + ordinal(t.place).toUpperCase() + "!", css: colorOf(t).css, t: 4 };
-    beep(660, 0.4, "triangle", 0.08);
+    fanfare();
   }
 
   function endRace() {
@@ -537,6 +743,11 @@ export function start(ctx) {
       ...dnf.map((t, i) => ({ t, place: fin.length + i + 1, time: 0, dnf: true })),
     ];
     winner = fin[0] || null;
+    const palette = ["#ffc233", "#ff3b3b", "#3b8bff", "#35d07f", "#ffffff", "#ff4fd8"];
+    confetti = winner ? Array.from({ length: 90 }, () => ({
+      x: rng() * W, y: -rng() * H, vx: (rng() - 0.5) * 60, vy: 90 + rng() * 140,
+      rot: rng() * 6.28, vr: (rng() - 0.5) * 8, c: palette[Math.floor(rng() * palette.length)], s: 6 + rng() * 6,
+    })) : [];
     for (const s of standings) {
       const txt = s.dnf ? "DNF" : ordinal(s.place) + " - " + fmtTime(s.time);
       sendHud(s.t.steer, txt); sendHud(s.t.pedal, txt);
@@ -546,7 +757,39 @@ export function start(ctx) {
     for (const s of members.keys()) if (!roles.has(s)) sendHud(s, specTxt);
     // give everybody the default pad again so the host can press A to go back
     broadcastMode("pad");
-    beep(660, 0.5, "triangle", 0.08);
+    if (winner) fanfare(); else sadTune();
+  }
+
+  // ---------- rematch (same teams, same colours) ----------
+  function rematch() {
+    if (phase !== "end") return;
+    traffic.dispose();
+    traffic = createTraffic(scene, track, rng);
+    own(traffic);
+    clearSkids();
+    for (const p of parts) scene.remove(p.m);
+    parts.length = 0;
+    for (const t of teams) {
+      const p = track.sample(START_S, (t.id - (nTeams - 1) / 2) * 5);
+      Object.assign(t.car, createCar(p.x, p.z, p.h), { falling: false, fallT: 0, pitch: 0 });
+      t.loc = track.makeLoc(START_S);
+      t.box = carBox(t.car, t.box);
+      t.camH = p.h; t.camInit = false;
+      t.input.steer = 0; t.input.gas = false; t.input.brake = false;
+      t.drive.steer = 0; t.drive.gas = false; t.drive.brake = false;
+      t.steerPrev = 0; t.gasPrev = false;
+      t.dist = 0; t.reason = ""; t.respawnT = -1; t.invuln = 0; t.voided = false; t.safeS = START_S;
+      t.finished = false; t.finishTime = 0; t.place = 0; t.needle = 0;
+      t.skOn[0] = t.skOn[1] = false; t.skidding = false;
+      t.mesh.setColor(colorOf(t).hex);
+      t.mesh.root.visible = true;
+      if (!t.dropped) { sendRole(t.steer, "steer"); sendRole(t.pedal, "pedal"); }
+    }
+    for (const s of members.keys()) if (!roles.has(s)) { sendRole(s, "spectator"); sendHud(s, "SPECTATING"); }
+    raceT = 0; pendingEnd = -1; finishOrder.length = 0;
+    standings = []; winner = null; banner = null; confetti = [];
+    phase = "select";
+    beginCountdown();
   }
 
   // ---------- fixed-step simulation ----------
@@ -555,16 +798,24 @@ export function start(ctx) {
     const ctl = racing && !t.finished;
     d.steer = ctl ? t.input.steer : 0;
     d.gas = ctl && t.input.gas;
-    d.brake = (ctl && t.input.brake) || t.finished;   // finished cars roll to a stop
+    d.brake = ctl && t.input.brake;   // finished cars do NOT brake (braking at 0 speed = reverse)
     if (t.invuln > 0) t.invuln -= dt;
 
     if (c.falling) {
       if (stepFalling(c, dt)) t.voided = true;
     } else {
       stepCar(c, d, dt);
+      if (t.finished && c.alive) {
+        // roll to a smooth stop after the finish line and stay there (never reverse)
+        const k = Math.exp(-2.4 * dt);
+        c.vx *= k; c.vz *= k; c.speed *= k;
+        if (Math.hypot(c.vx, c.vz) < 0.5) { c.vx = 0; c.vz = 0; c.speed = 0; }
+      }
       const loc = track.locate(c.x, c.z, t.loc);
 
-      if (!racing) return;
+      if (!racing && !(t.finished && phase === "end")) return;
+
+      emitSkid(t);
 
       const side = t.finished ? 0 : checkFall(c, track, loc);
       if (side) {
@@ -762,41 +1013,146 @@ export function start(ctx) {
     else text("STEER: \u25C0 \u25B6 pick   PEDALS: GAS to lock in", cx, y + h - 36, 19, "#fff", "center");
   }
 
+  function drawMiniCar(cx, y, css, k) {
+    g2.fillStyle = css;
+    g2.fillRect(cx - 34 * k, y - 22 * k, 68 * k, 14 * k);
+    g2.fillRect(cx - 20 * k, y - 34 * k, 38 * k, 13 * k);
+    g2.fillStyle = "#cfe8ff";
+    g2.fillRect(cx - 16 * k, y - 32 * k, 14 * k, 9 * k);
+    g2.fillRect(cx + 1 * k, y - 32 * k, 14 * k, 9 * k);
+    g2.fillStyle = "#111";
+    for (const dx of [-20, 20]) { g2.beginPath(); g2.arc(cx + dx * k, y - 8 * k, 8 * k, 0, Math.PI * 2); g2.fill(); }
+  }
+
   function drawResults() {
-    g2.fillStyle = "rgba(6,8,16,0.9)"; g2.fillRect(0, 0, W, H);
-    text("RACE RESULTS", W / 2, 54, 54, "#fff", "center");
+    const elapsed = Math.max(0, END_TIME - endT);
+    g2.fillStyle = "rgba(6,8,16,0.92)"; g2.fillRect(0, 0, W, H);
+    text("RACE RESULTS", W / 2, 46, 48, "#fff", "center");
 
     if (winner) {
-      const css = colorOf(winner).css;
-      text("\uD83C\uDFC6 TEAM " + (winner.id + 1) + " WINS!", W / 2, 128, 64, css, "center");
-      text(nm(winner.steer) + " + " + nm(winner.pedal) + "   \u2022   " + fmtTime(winner.finishTime), W / 2, 188, 30, "#fff", "center");
+      text("TEAM " + (winner.id + 1) + " WINS!", W / 2, 104, 54, colorOf(winner).css, "center");
+      text(nm(winner.steer) + " + " + nm(winner.pedal) + "   \u2022   " + fmtTime(winner.finishTime), W / 2, 152, 26, "#fff", "center");
     } else {
-      text("NO WINNER", W / 2, 128, 64, "#ff5252", "center");
-      text("Nobody crossed the finish line in " + fmtClock(RACE_MAX), W / 2, 188, 28, "#ddd", "center");
+      text("NO WINNER", W / 2, 104, 54, "#ff5252", "center");
+      text("Nobody crossed the finish line in " + fmtClock(RACE_MAX), W / 2, 152, 24, "#ddd", "center");
     }
 
-    const rowH = 70, y0 = 250;
+    // ----- podium (left) -----
+    const top = standings.filter((s) => !s.dnf).slice(0, 3);
+    const base = 585;
+    g2.fillStyle = "rgba(255,255,255,0.14)"; g2.fillRect(40, base, 574, 6);
+    const slots = [
+      { idx: 1, cx: 145, h: 150, delay: 0.9 },
+      { idx: 0, cx: 327, h: 210, delay: 1.5 },
+      { idx: 2, cx: 509, h: 105, delay: 0.3 },
+    ];
+    for (const sl of slots) {
+      const s = top[sl.idx]; if (!s) continue;
+      const k = clamp01((elapsed - sl.delay) / 0.8);
+      if (k <= 0) continue;
+      const bh = sl.h * easeOutBack(k), css = colorOf(s.t).css;
+      g2.fillStyle = css; g2.fillRect(sl.cx - 85, base - bh, 170, bh);
+      g2.fillStyle = "rgba(255,255,255,0.35)"; g2.fillRect(sl.cx - 85, base - bh, 170, 8);
+      g2.fillStyle = "rgba(0,0,0,0.25)"; g2.fillRect(sl.cx - 85, base - bh / 2, 170, bh / 2);
+      if (k >= 0.7) {
+        text(String(s.place), sl.cx, base - bh + 44, 46, "#fff", "center");
+        text("TEAM " + (s.t.id + 1), sl.cx, base - bh + 86, 22, "#fff", "center");
+      }
+      const kd = clamp01((elapsed - sl.delay - 0.8) / 0.7);
+      if (kd > 0) {
+        const carY = base - bh - (1 - easeOutBounce(kd)) * 260;
+        drawMiniCar(sl.cx, carY, css, 1.3);
+        if (sl.idx === 0 && kd >= 1) text("\uD83C\uDFC6", sl.cx, carY - 62, 44, "#ffc233", "center");
+      }
+    }
+
+    // ----- confetti -----
+    if (elapsed > 1.4) {
+      for (const f of confetti) {
+        f.x += f.vx / 30; f.y += f.vy / 30; f.rot += f.vr / 30;
+        if (f.y > H + 20) { f.y = -20; f.x = rng() * W; }
+        g2.save(); g2.translate(f.x, f.y); g2.rotate(f.rot);
+        g2.fillStyle = f.c; g2.fillRect(-f.s / 2, -f.s / 4, f.s, f.s / 2);
+        g2.restore();
+      }
+    }
+
+    // ----- full standings (right) -----
+    const lx = 660, lw = 580, rowH = 78, y0 = 215;
     standings.forEach((s, i) => {
       const y = y0 + i * rowH, t = s.t, css = colorOf(t).css;
       g2.fillStyle = i === 0 && !s.dnf ? "rgba(255,194,51,0.16)" : "rgba(255,255,255,0.07)";
-      g2.fillRect(190, y, W - 380, rowH - 10);
-      g2.fillStyle = css; g2.fillRect(190, y, 10, rowH - 10);
-      text(s.dnf ? "-" : ordinal(s.place), 250, y + 30, 32, s.dnf ? "#888" : "#ffc233", "center");
-      text("TEAM " + (t.id + 1), 320, y + 30, 28, css);
-      text(nm(t.steer) + " + " + nm(t.pedal), 490, y + 30, 24, "#fff");
+      g2.fillRect(lx, y, lw, rowH - 10);
+      g2.fillStyle = css; g2.fillRect(lx, y, 10, rowH - 10);
+      text(s.dnf ? "-" : ordinal(s.place), lx + 55, y + 34, 32, s.dnf ? "#888" : "#ffc233", "center");
+      text("TEAM " + (t.id + 1), lx + 105, y + 24, 26, css);
+      text(nm(t.steer) + " + " + nm(t.pedal), lx + 105, y + 52, 19, "#ccc");
       if (s.dnf) {
-        text("DNF", W - 220, y + 20, 32, "#ff5252", "right");
-        text(Math.round(t.dist) + " m", W - 220, y + 48, 18, "#aaa", "right");
+        text("DNF", lx + lw - 20, y + 22, 32, "#ff5252", "right");
+        text(Math.round(t.dist) + " m", lx + lw - 20, y + 50, 18, "#aaa", "right");
       } else {
-        text(fmtTime(s.time), W - 220, y + 30, 32, "#fff", "right");
+        text(fmtTime(s.time), lx + lw - 20, y + 34, 32, "#fff", "right");
       }
     });
 
-    text("Returning to menu in " + Math.max(0, Math.ceil(endT)) + "...   (host: press A to return now)", W / 2, H - 36, 22, "#aaa", "center");
+    text("HOST:  A = PLAY AGAIN     B = BACK TO MENU", W / 2, 645, 26, "#fff", "center");
+    text("Returning to menu in " + Math.max(0, Math.ceil(endT)) + "...", W / 2, 685, 20, "#aaa", "center");
+  }
+
+  // finished teams by place, then everybody else by distance covered
+  const rankTeams = () => teams.slice().sort((a, b) =>
+    (b.finished - a.finished) || (a.finished && b.finished ? a.place - b.place : b.dist - a.dist));
+
+  function drawPosition(t, order, x, y, w) {
+    const bw = 150, bx = x + w - bw - 12, p = order.indexOf(t);
+    g2.fillStyle = "rgba(0,0,0,0.6)"; g2.fillRect(bx, y + 12, bw, 86);
+    text(ordinal(p + 1), bx + bw / 2, y + 40, 40, p === 0 ? "#ffc233" : "#fff", "center");
+    let sub, col;
+    if (t.finished) { sub = "FINISHED"; col = "#35d07f"; }
+    else if (p === 0) { sub = "+" + Math.round(t.dist - (order[1] ? order[1].dist : 0)) + " m"; col = "#35d07f"; }
+    else {
+      const lead = order[0], ld = lead.finished ? FINISH_LINE : lead.dist;
+      sub = "-" + Math.round(Math.max(0, ld - t.dist)) + " m"; col = "#ff9a3c";
+    }
+    text(sub, bx + bw / 2, y + 78, 24, col, "center");
+  }
+
+  function drawSpeedo(t, cx, cy, r) {
+    const kmh = t.car.speed * 3.6;
+    t.needle += (kmh - t.needle) * 0.35;
+    const a0 = 0.75 * Math.PI, sweep = 1.5 * Math.PI;
+    const ang = (v) => a0 + clamp01(v / SPEEDO_MAX) * sweep;
+
+    g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2);
+    g2.fillStyle = "rgba(8,10,18,0.78)"; g2.fill();
+    g2.lineWidth = 4; g2.strokeStyle = "#9aa3b8"; g2.stroke();
+
+    g2.beginPath(); g2.arc(cx, cy, r * 0.84, ang(130), ang(SPEEDO_MAX));     // red zone
+    g2.lineWidth = r * 0.07; g2.strokeStyle = "#ff3b3b"; g2.stroke();
+
+    for (let v = 0; v <= SPEEDO_MAX; v += 10) {
+      const major = v % 20 === 0, a = ang(v), co = Math.cos(a), si = Math.sin(a);
+      const r1 = r * 0.9, r2 = r * (major ? 0.74 : 0.82);
+      g2.beginPath(); g2.moveTo(cx + co * r1, cy + si * r1); g2.lineTo(cx + co * r2, cy + si * r2);
+      g2.lineWidth = major ? 3 : 1.5; g2.strokeStyle = "#e8ecf8"; g2.stroke();
+    }
+    for (let v = 0; v <= SPEEDO_MAX; v += 40) {
+      const a = ang(v);
+      text(String(v), cx + Math.cos(a) * r * 0.58, cy + Math.sin(a) * r * 0.58, Math.round(r * 0.17), "#fff", "center");
+    }
+
+    const na = ang(t.needle), nc = Math.cos(na), ns = Math.sin(na);
+    g2.beginPath(); g2.moveTo(cx - nc * r * 0.12, cy - ns * r * 0.12); g2.lineTo(cx + nc * r * 0.8, cy + ns * r * 0.8);
+    g2.lineWidth = 4; g2.lineCap = "round"; g2.strokeStyle = "#ff4d4d"; g2.stroke(); g2.lineCap = "butt";
+    g2.beginPath(); g2.arc(cx, cy, r * 0.09, 0, Math.PI * 2); g2.fillStyle = "#ddd"; g2.fill();
+
+    text(String(Math.round(kmh)), cx, cy + r * 0.42, Math.round(r * 0.26), "#fff", "center");
+    text("km/h", cx, cy + r * 0.64, Math.round(r * 0.14), "#aab", "center");
   }
 
   function drawHud() {
     g2.clearRect(0, 0, W, H);
+    const order = rankTeams();
 
     if (phase === "abort") {
       g2.fillStyle = "rgba(0,0,0,0.85)"; g2.fillRect(0, 0, W, H);
@@ -840,11 +1196,12 @@ export function start(ctx) {
       text(fmtClock(raceT) + " / " + fmtClock(RACE_MAX), x + w / 2, y + 38, 32, raceT > RACE_MAX - 30 ? "#ff5252" : "#fff", "center");
       text(Math.round(t.dist) + " m", x + w / 2, y + 76, 23, "#ffc233", "center");
 
-      // BOTTOM-CENTER: SPEEDOMETER
-      g2.fillStyle = "rgba(0,0,0,0.45)";
-      g2.fillRect(x + w / 2 - 150, y + h - 86, 300, 74);
-      text(String(Math.round(c.speed * 3.6)), x + w / 2 - 20, y + h - 52, 52, "#fff", "right");
-      text("km/h", x + w / 2 - 10, y + h - 44, 22, "#ddd");
+      // BOTTOM-LEFT: ANALOGUE SPEEDOMETER
+      const sr = nTeams > 2 ? 62 : 88;
+      drawSpeedo(t, x + sr + 14, y + h - sr - 14, sr);
+
+      // TOP-RIGHT: LIVE POSITION + GAP TO LEADER
+      if (nTeams > 1 && phase === "race") drawPosition(t, order, x, y, w);
 
       if (t.finished) {
         text("FINISHED  " + ordinal(t.place), x + w / 2, y + h / 2 - 10, nTeams > 2 ? 44 : 64, "#35d07f", "center");
@@ -911,6 +1268,7 @@ export function start(ctx) {
   }
 
   function render(dt) {
+    updateEngines();
     renderer.setViewport(0, 0, W, H); renderer.setScissor(0, 0, W, H);
     renderer.setClearColor(0x000000, 1); renderer.clear();
 
@@ -953,7 +1311,10 @@ export function start(ctx) {
 
     if (phase === "teamsel") { teamInput(d.slot, data); return; }
     if (phase === "end") {
-      if (d.host && data.type === "button" && data.pressed && (data.id === "A" || data.id === "B")) leave();
+      if (d.host && data.type === "button" && data.pressed) {
+        if (data.id === "A") rematch();
+        else if (data.id === "B") leave();
+      }
       return;
     }
 
@@ -1044,6 +1405,7 @@ export function start(ctx) {
       parts.length = 0;
       for (const o of disposables) { try { if (o.dispose) o.dispose(); } catch { /* ignore */ } }
       disposeCarAssets();
+      for (const e of engines) { try { e.osc.stop(); e.sub.stop(); if (e.skid) e.skid.src.stop(); } catch { /* ignore */ } }
       try { if (ac) ac.close(); } catch { /* ignore */ }
       renderer.dispose();
       try { renderer.forceContextLoss(); } catch { /* ignore */ }

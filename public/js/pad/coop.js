@@ -6,10 +6,10 @@ export default {
   mount(root, io) {
     const style = document.createElement("style");
     style.textContent = `
-      .coop-wrap { display: flex; width: 100%; height: 100%; gap: 4vw; padding: 4vw; box-sizing: border-box; justify-content: center; background: #111; }
+      .coop-wrap { display: flex; width: 100%; height: 100%; gap: 4vw; padding: 4vw; box-sizing: border-box; justify-content: center; background: transparent; }
       .coop-btn { flex: 1; border-radius: 24px; border: none; font-size: 15vw; background: var(--player, #555); color: white; touch-action: none; user-select: none; display: flex; justify-content: center; align-items: center; box-shadow: 0 8px 0 rgba(0,0,0,0.4); }
       .coop-btn:active { transform: translateY(8px); box-shadow: none; filter: brightness(0.8); }
-      svg { width: 1.2em; height: 1.2em; stroke: currentColor; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .coop-btn svg { width: 1.2em; height: 1.2em; stroke: currentColor; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     `;
     document.head.append(style);
 
@@ -28,6 +28,7 @@ export default {
       if (currentMode === mode) return;
       currentMode = mode;
       wrap.innerHTML = "";
+      left = right = gas = brake = false;
 
       // Cleanup native widgets if switching back to racing
       if (padWidgets) {
