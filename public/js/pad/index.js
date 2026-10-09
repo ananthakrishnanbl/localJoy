@@ -16,6 +16,8 @@ import choice from "./choice.js";
 import race from "./race.js";
 import coop from "./coop.js";
 import ctf from "./ctf.js";
+import turner from "./turner.js";
+import stopper from "./stopper.js";
 
 const PADS = {
   [gamepad.id]: gamepad,
@@ -25,6 +27,8 @@ const PADS = {
   [race.id]: race,            // <-- was missing: without it "race" fell back to the joystick pad
   [coop.id]: coop,
   [ctf.id]: ctf,              // capture the flag: basic pad for team select, twin sticks + fire in play
+  [turner.id]: turner,        // loop rider: two tap buttons for LEFT / RIGHT steering
+  [stopper.id]: stopper,   // stop clock: one big tap button
 };
 
 export function getPad(type) {

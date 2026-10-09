@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Loop Rider">
+  <defs>
+    <radialGradient id="lrGlow" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#5b8def" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="lrBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" fill="#1e2246"/>
+  <ellipse cx="200" cy="175" rx="210" ry="180" fill="url(#lrGlow)"/>
+
+  <!-- Route glow (soft blue halo under the road) -->
+  <path d="M 200 55
+           C 260 58, 315 105, 320 165
+           C 326 225, 295 275, 245 288
+           C 185 302, 120 288, 92 245
+           C 65 205, 68 155, 95 118
+           C 120 82, 160 55, 200 55 Z"
+        fill="none" stroke="#5b8def" stroke-opacity="0.55" stroke-width="16"
+        stroke-linejoin="round" filter="url(#lrBlur)"/>
+
+  <!-- Route casing (light blue outer edge) -->
+  <path d="M 200 55
+           C 260 58, 315 105, 320 165
+           C 326 225, 295 275, 245 288
+           C 185 302, 120 288, 92 245
+           C 65 205, 68 155, 95 118
+           C 120 82, 160 55, 200 55 Z"
+        fill="none" stroke="#8ab4f8" stroke-width="9"
+        stroke-linejoin="round"/>
+
+  <!-- Route core (solid blue) -->
+  <path d="M 200 55
+           C 260 58, 315 105, 320 165
+           C 326 225, 295 275, 245 288
+           C 185 302, 120 288, 92 245
+           C 65 205, 68 155, 95 118
+           C 120 82, 160 55, 200 55 Z"
+        fill="none" stroke="#5b8def" stroke-width="5"
+        stroke-linejoin="round"/>
+
+  <!-- Player trail (cyan, drawn from the start dot up and over the top) -->
+  <path d="M 73 180
+           C 78 140, 90 108, 115 88
+           C 138 70, 168 58, 200 55
+           C 222 54, 238 58, 250 67"
+        fill="none" stroke="#2aa9e0" stroke-width="4.5"
+        stroke-linecap="round" stroke-opacity="0.95"/>
+
+  <!-- Start dot (left of the loop) -->
+  <circle cx="73" cy="180" r="8" fill="#ffffff"/>
+  <circle cx="73" cy="180" r="5" fill="#ea4335"/>
+
+  <!-- Nav chevron mid-lap, pointing along the tangent -->
+  <g transform="translate(250 67) rotate(30)">
+    <path d="M 22 0 L -14 -14 L -5 0 L -14 14 Z" fill="#ffffff"/>
+    <path d="M 15 0 L -8 -8 L -1 0 L -8 8 Z" fill="#5b8def"/>
+  </g>
+
+  <!-- Title -->
+  <text x="200" y="372" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="28" font-weight="700"
+        fill="#ffffff" letter-spacing="4.5">LOOP RIDER</text>
+</svg>

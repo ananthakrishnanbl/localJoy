@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Stop Clock">
+  <defs>
+    <radialGradient id="scGlow" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#5b8def" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="scShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" fill="#1e2246"/>
+  <circle cx="200" cy="180" r="170" fill="url(#scGlow)"/>
+
+  <!-- Soft outer ring (site's card feel) -->
+  <circle cx="200" cy="195" r="135" fill="none" stroke="#5b8def" stroke-opacity="0.15" stroke-width="1.5"/>
+
+  <!-- White clock housing -->
+  <g filter="url(#scShadow)">
+    <circle cx="200" cy="195" r="118" fill="#ffffff"/>
+  </g>
+  <circle cx="200" cy="195" r="118" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>
+
+  <!-- 12 tick marks -->
+  <g stroke="#1a1f3d" stroke-opacity="0.22" stroke-width="2.5" stroke-linecap="round">
+    <line x1="200" y1="86" x2="200" y2="97"/>
+    <line x1="200" y1="293" x2="200" y2="304"/>
+    <line x1="91"  y1="195" x2="102" y2="195"/>
+    <line x1="298" y1="195" x2="309" y2="195"/>
+    <line x1="123" y1="118" x2="131" y2="126"/>
+    <line x1="269" y1="264" x2="277" y2="272"/>
+    <line x1="277" y1="118" x2="269" y2="126"/>
+    <line x1="131" y1="264" x2="123" y2="272"/>
+  </g>
+
+  <!-- Digits -->
+  <text x="200" y="207" text-anchor="middle"
+        font-family="Menlo, Consolas, monospace" font-size="42" font-weight="800"
+        fill="#5b8def" letter-spacing="0.5">10.00</text>
+
+  <!-- 8 iris blades, ~70% open (i.e. ~30% closed) -->
+  <!-- even blades: #0a0f2a -->
+  <!-- odd blades:  #141a3f -->
+  <g stroke="rgba(255,255,255,0.06)" stroke-width="1">
+    <path d="M 318 195 A 118 118 0 0 1 283.44 278.44 L 253.38 258.04 A 82.6 82.6 0 0 0 282.32 201.81 Z" fill="#0a0f2a"/>
+    <path d="M 283.44 278.44 A 118 118 0 0 1 200 313 L 193.19 277.32 A 82.6 82.6 0 0 0 253.38 258.04 Z" fill="#141a3f"/>
+    <path d="M 200 313 A 118 118 0 0 1 116.56 278.44 L 136.96 248.38 A 82.6 82.6 0 0 0 193.19 277.32 Z" fill="#0a0f2a"/>
+    <path d="M 116.56 278.44 A 118 118 0 0 1 82 195 L 117.68 188.19 A 82.6 82.6 0 0 0 136.96 248.38 Z" fill="#141a3f"/>
+    <path d="M 82 195 A 118 118 0 0 1 116.56 111.56 L 146.62 131.96 A 82.6 82.6 0 0 0 117.68 188.19 Z" fill="#0a0f2a"/>
+    <path d="M 116.56 111.56 A 118 118 0 0 1 200 77 L 206.81 112.68 A 82.6 82.6 0 0 0 146.62 131.96 Z" fill="#141a3f"/>
+    <path d="M 200 77 A 118 118 0 0 1 283.44 111.56 L 263.04 141.62 A 82.6 82.6 0 0 0 206.81 112.68 Z" fill="#0a0f2a"/>
+    <path d="M 283.44 111.56 A 118 118 0 0 1 318 195 L 282.32 201.81 A 82.6 82.6 0 0 0 263.04 141.62 Z" fill="#141a3f"/>
+  </g>
+
+  <!-- Title -->
+  <text x="200" y="366" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="24" font-weight="700"
+        fill="#ffffff" letter-spacing="4">STOP CLOCK</text>
+
+  <!-- Accent underline -->
+  <rect x="150" y="376" width="100" height="3" rx="1.5" fill="#5b8def"/>
+</svg>

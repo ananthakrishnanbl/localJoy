@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Loop Rider banner">
+  <defs>
+    <radialGradient id="lrbGlow" cx="75%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#5b8def" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="lrbBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="400" fill="#1e2246"/>
+  <ellipse cx="880" cy="200" rx="360" ry="260" fill="url(#lrbGlow)"/>
+
+  <!-- Route glow -->
+  <path d="M 900 55
+           C 1010 58, 1100 110, 1115 185
+           C 1130 260, 1050 335, 950 350
+           C 855 362, 745 335, 710 265
+           C 680 205, 690 140, 745 100
+           C 795 65, 850 55, 900 55 Z"
+        fill="none" stroke="#5b8def" stroke-opacity="0.55" stroke-width="20"
+        stroke-linejoin="round" filter="url(#lrbBlur)"/>
+
+  <!-- Route casing -->
+  <path d="M 900 55
+           C 1010 58, 1100 110, 1115 185
+           C 1130 260, 1050 335, 950 350
+           C 855 362, 745 335, 710 265
+           C 680 205, 690 140, 745 100
+           C 795 65, 850 55, 900 55 Z"
+        fill="none" stroke="#8ab4f8" stroke-width="11"
+        stroke-linejoin="round"/>
+
+  <!-- Route core -->
+  <path d="M 900 55
+           C 1010 58, 1100 110, 1115 185
+           C 1130 260, 1050 335, 950 350
+           C 855 362, 745 335, 710 265
+           C 680 205, 690 140, 745 100
+           C 795 65, 850 55, 900 55 Z"
+        fill="none" stroke="#5b8def" stroke-width="6"
+        stroke-linejoin="round"/>
+
+  <!-- Player trail -->
+  <path d="M 705 218
+           C 700 165, 720 115, 765 88
+           C 800 68, 850 56, 900 55
+           C 930 54, 960 60, 985 74"
+        fill="none" stroke="#2aa9e0" stroke-width="5.5"
+        stroke-linecap="round" stroke-opacity="0.95"/>
+
+  <!-- Start dot -->
+  <circle cx="705" cy="218" r="10" fill="#ffffff"/>
+  <circle cx="705" cy="218" r="6.5" fill="#ea4335"/>
+
+  <!-- Nav chevron -->
+  <g transform="translate(985 74) rotate(24)">
+    <path d="M 26 0 L -17 -17 L -6 0 L -17 17 Z" fill="#ffffff"/>
+    <path d="M 18 0 L -10 -10 L -2 0 L -10 10 Z" fill="#5b8def"/>
+  </g>
+
+  <!-- ============ TEXT BLOCK (left) ============ -->
+  <g font-family="Fredoka, system-ui, sans-serif">
+    <!-- Title -->
+    <text x="80" y="160" font-size="64" font-weight="800"
+          fill="#ffffff" letter-spacing="3">LOOP RIDER</text>
+
+    <!-- Accent underline -->
+    <rect x="82" y="184" width="94" height="4" rx="2" fill="#5b8def"/>
+
+    <!-- Tagline -->
+    <text x="80" y="234" font-size="22" font-weight="600" fill="#8ab4f8">
+      Trace the line. Don't drift.
+    </text>
+
+    <!-- Subtitle -->
+    <text x="80" y="268" font-size="16" font-weight="500" fill="#8b93b8">
+      Tap left, tap right. Every nudge bends your heading.
+    </text>
+
+    <!-- Info strip -->
+    <text x="80" y="312" font-size="14" font-weight="600"
+          fill="#5b8def" letter-spacing="2.5">1-4 PLAYERS · TAP TO STEER</text>
+  </g>
+</svg>
