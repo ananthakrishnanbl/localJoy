@@ -23,7 +23,7 @@ const STEP = 1 / 120;
 const TEAM_SELECT_TIMEOUT = 60;
 const SELECT_TIMEOUT = 60;
 const COUNTDOWN_TIME = 3, END_TIME = 25;
-const FINISH_LINE = 2000;
+const FINISH_LINE = 2500;
 const RACE_MAX = 240;            // 4 minutes, then unfinished teams are DNF
 const RESPAWN_TIME = 5;          // seconds between crash / fall and respawn
 const RESPAWN_INVULN = 3;        // seconds of crash immunity after respawn
