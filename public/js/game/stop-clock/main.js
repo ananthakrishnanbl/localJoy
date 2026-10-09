@@ -14,6 +14,7 @@ const CLOSE_START     = 1.0;
 const CLOSE_DURATION  = 1.4;
 const REVEAL_DURATION = 3.0;    // seconds the frozen clocks stay visible
 const REVEAL_ANIM     = 0.6;    // portion of that used to open the irises
+const TOTALS_DELAY    = 3.0;    // seconds the final results stay up before totals
 const TARGET          = 10.0;
 const MAX_TIME        = 20.0;
 const TOTAL_ROUNDS    = 3;
@@ -79,7 +80,7 @@ export function start(ctx) {
 
   /* --------------------------- state ----------------------------- */
   const players = new Map();
-  // countdown | running | reveal | leaderboard
+  // countdown | running | reveal | leaderboard | totals
   let state = "countdown";
   let stateTimer = COUNTDOWN;
   let roundStart = 0;
@@ -98,6 +99,7 @@ export function start(ctx) {
       slot, connected: true, rect: null,
       stopped: false, stopTime: 0, score: 0, total: 0,
       ready: false,
+      roundScores: [],
       lastSid: null, lastCount: 0,
     });
   }
@@ -120,7 +122,7 @@ export function start(ctx) {
     p.ready = false;
     if (state === "countdown") layoutRound();
     if (state === "running") checkAllStopped();
-    if (state === "leaderboard") checkAllReady();
+    if (state === "leaderboard" || state === "totals") checkAllReady();
   });
 
   on(window, "controller-input", (e) => {
@@ -145,7 +147,7 @@ export function start(ctx) {
       ctx.send(slot, { type: "vibrate", ms: 30 });
       ctx.send(slot, { type: "stopper-state", state: "stopped" });
       checkAllStopped();
-    } else if (state === "leaderboard" && !p.ready) {
+    } else if ((state === "leaderboard" || state === "totals") && !p.ready) {
       p.ready = true;
       ctx.send(slot, { type: "vibrate", ms: 20 });
       checkAllReady();
@@ -194,6 +196,9 @@ export function start(ctx) {
   function startRound() {
     if (exiting) return;
     currentRound++;
+    if (currentRound === 1) {
+      for (const p of players.values()) p.roundScores = [];
+    }
     roundStart = 0;
     roundClock = 0;
     aperture = 1;
@@ -236,8 +241,11 @@ export function start(ctx) {
       if (p.score > best) { best = p.score; winnerSlots = [p.slot]; }
       else if (p.score === best) winnerSlots.push(p.slot);
     }
-    // Fold round score into match total.
-    for (const p of active) p.total += p.score;
+    // Fold round score into match total and keep per-round history.
+    for (const p of active) {
+      p.total += p.score;
+      p.roundScores.push(p.score);
+    }
 
     aperture = 0;
     state = "reveal";
@@ -247,9 +255,12 @@ export function start(ctx) {
 
   // Reveal is done → full-screen leaderboard. Now the phone button
   // becomes START (rounds 1-2) or PLAY AGAIN (final round).
+  // After the final round the leaderboard lingers for TOTALS_DELAY
+  // seconds, then flips to the total-scores view.
   function enterLeaderboard() {
     state = "leaderboard";
     const isFinal = currentRound >= TOTAL_ROUNDS;
+    stateTimer = isFinal ? TOTALS_DELAY : 0;
     for (const p of players.values()) {
       if (p.connected) {
         ctx.send(p.slot, {
@@ -261,7 +272,7 @@ export function start(ctx) {
   }
 
   function checkAllReady() {
-    if (state !== "leaderboard") return;
+    if (state !== "leaderboard" && state !== "totals") return;
     const active = [...players.values()].filter((p) => p.connected);
     if (active.length === 0) return;
     if (!active.every((p) => p.ready)) return;
@@ -326,7 +337,21 @@ export function start(ctx) {
       return;
     }
 
-    // leaderboard: waiting for taps.
+    if (state === "leaderboard") {
+      // After the final round, hold on the round results for a beat,
+      // then show the total-scores view.
+      if (stateTimer > 0) {
+        stateTimer -= dt;
+        if (stateTimer <= 0) {
+          stateTimer = 0;
+          state = "totals";
+          ctx.broadcast({ type: "vibrate", ms: [30, 40, 30] });
+        }
+      }
+      return;
+    }
+
+    // totals: waiting for taps.
   }
 
   /* ---------------------------- draw ----------------------------- */
@@ -671,6 +696,159 @@ export function start(ctx) {
     g.fillText("Host: press Exit to leave the game", W / 2, H - 20);
   }
 
+  /* -------------- Total scores (full-screen table) -------------- */
+  function drawTotals() {
+    const W = canvas.width, H = canvas.height;
+    g.fillStyle = BG;
+    g.fillRect(0, 0, W, H);
+
+    const active = [...players.values()].filter((p) => p.connected);
+
+    // Sort by match total descending; ties by name.
+    const rows = [...active].sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      const an = (ctx.player(a.slot)?.name || "");
+      const bn = (ctx.player(b.slot)?.name || "");
+      return an.localeCompare(bn);
+    });
+
+    const bestTotal = rows.length ? rows[0].total : 0;
+
+    // Title
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = INK_LIGHT;
+    g.font = "800 34px Fredoka, system-ui, sans-serif";
+    g.fillText("Total Scores", W / 2, HEADER_H + 34);
+
+    // Ready counter / prompt
+    const readyCount = active.filter((p) => p.ready).length;
+    g.fillStyle = MUTED;
+    g.font = "600 14px Fredoka, system-ui, sans-serif";
+    g.fillText(
+      `Tap PLAY AGAIN to start a fresh match · ${readyCount} / ${active.length} ready`,
+      W / 2, HEADER_H + 62
+    );
+
+    // Table geometry
+    const tableX = 100;
+    const tableW = W - tableX * 2;
+    const rowH = Math.min(52, (H - HEADER_H - 190) / Math.max(1, rows.length));
+    const headerY = HEADER_H + 100;
+    const firstRowY = headerY + 26;
+
+    const colRank  = tableX + 20;
+    const colName  = tableX + 80;
+    const colR1    = tableX + tableW * 0.50;
+    const colR2    = tableX + tableW * 0.62;
+    const colR3    = tableX + tableW * 0.74;
+    const colTotal = tableX + tableW * 0.88;
+
+    // Header row
+    g.textBaseline = "middle";
+    g.font = "700 12px Fredoka, system-ui, sans-serif";
+    g.fillStyle = FAINT;
+    g.textAlign = "left";
+    g.fillText("RANK", colRank, headerY);
+    g.fillText("PLAYER", colName, headerY);
+    g.textAlign = "right";
+    g.fillText("ROUND 1", colR1, headerY);
+    g.fillText("ROUND 2", colR2, headerY);
+    g.fillText("ROUND 3", colR3, headerY);
+    g.fillText("TOTAL", colTotal, headerY);
+
+    // Divider under the header
+    g.strokeStyle = DIVIDER;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(tableX, headerY + 16);
+    g.lineTo(tableX + tableW, headerY + 16);
+    g.stroke();
+
+    const roundCols = [colR1, colR2, colR3];
+
+    // Rows
+    rows.forEach((p, i) => {
+      const info = ctx.player(p.slot);
+      const name = (info && info.name) || `P${p.slot + 1}`;
+      const color = (info && info.color) || BLUE;
+      const y = firstRowY + i * rowH + rowH / 2;
+      const isWinner = bestTotal > 0 && p.total === bestTotal;
+
+      // Rank with ties sharing the top rank of their group.
+      let rank = i + 1;
+      for (let j = i - 1; j >= 0; j--) {
+        if (rows[j].total === p.total) rank = j + 1;
+        else break;
+      }
+
+      // Winner row highlight
+      if (isWinner) {
+        g.fillStyle = "rgba(255,180,0,0.12)";
+        roundRect(tableX, y - rowH / 2 + 2, tableW, rowH - 4, 8);
+        g.fill();
+      }
+
+      // Row separator (skip the first row's top border)
+      if (i > 0) {
+        g.strokeStyle = DIVIDER;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(tableX, y - rowH / 2 + 0.5);
+        g.lineTo(tableX + tableW, y - rowH / 2 + 0.5);
+        g.stroke();
+      }
+
+      // Rank
+      g.textAlign = "left";
+      g.textBaseline = "middle";
+      g.font = "800 18px Fredoka, system-ui, sans-serif";
+      g.fillStyle = isWinner ? GOLD : MUTED;
+      g.fillText(String(rank), colRank, y);
+
+      // Colour dot
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(colName - 14, y, 6, 0, TAU);
+      g.fill();
+
+      // Name
+      g.fillStyle = INK_LIGHT;
+      g.font = "700 18px Fredoka, system-ui, sans-serif";
+      g.textAlign = "left";
+      g.fillText(name, colName, y);
+
+      // Per-round scores
+      g.textAlign = "right";
+      g.font = "600 16px 'SF Mono', Menlo, Consolas, monospace";
+      for (let r = 0; r < TOTAL_ROUNDS; r++) {
+        const v = p.roundScores[r];
+        g.fillStyle = (v == null) ? FAINT : MUTED;
+        g.fillText(v == null ? "—" : String(v), roundCols[r], y);
+      }
+
+      // Match total
+      g.fillStyle = isWinner ? GOLD : INK_LIGHT;
+      g.font = "800 22px Fredoka, system-ui, sans-serif";
+      g.fillText(String(p.total), colTotal, y);
+
+      // Ready tick
+      if (p.ready) {
+        g.fillStyle = GREEN;
+        g.font = "800 18px Fredoka, system-ui, sans-serif";
+        g.textAlign = "left";
+        g.fillText("✓", colTotal + 40, y);
+      }
+    });
+
+    // Footer
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = FAINT;
+    g.font = "500 13px Fredoka, system-ui, sans-serif";
+    g.fillText("Host: press Exit to leave the game", W / 2, H - 20);
+  }
+
   function drawHeader() {
     g.fillStyle = BG_HEADER;
     g.fillRect(0, 0, canvas.width, HEADER_H);
@@ -687,7 +865,9 @@ export function start(ctx) {
     g.textBaseline = "middle";
     g.fillText("STOP CLOCK", 20, HEADER_H / 2 + 1);
 
-    const roundText = `Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`;
+    const roundText = state === "totals"
+      ? "Match complete"
+      : `Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`;
     g.font = "700 13px Fredoka, system-ui, sans-serif";
     const tw = g.measureText(roundText).width;
     const pillW = tw + 24;
@@ -738,6 +918,8 @@ export function start(ctx) {
 
     if (state === "leaderboard") {
       drawLeaderboard();
+    } else if (state === "totals") {
+      drawTotals();
     } else {
       for (const p of players.values()) {
         if (p.rect) drawQuadrant(p);
