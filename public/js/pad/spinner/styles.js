@@ -30,8 +30,8 @@ export function installPadStyles() {
        .spn-slot is only positioned (never transformed or filtered) so it can't drift;
        the press effect scales the inner .spn-face instead. */
     .spn-slot { position:absolute; width:var(--spn-btn); height:var(--spn-btn); }
-    .spn-slot.dash { right:6%; bottom:12%; }
-    .spn-slot.jump { left:6%;  top:12%; }
+    .spn-slot.dash { right:6%; bottom:4%; }
+    .spn-slot.jump { right: 6%; bottom: 52%; }
 
     .spn-btn { position:absolute; left:0; top:0; width:100%; height:100%; margin:0; padding:0; border:0;
       background:none; border-radius:50%; outline:none; cursor:pointer;

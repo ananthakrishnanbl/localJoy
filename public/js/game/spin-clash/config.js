@@ -5,6 +5,8 @@
 
 export const CANVAS = { w: 1280, h:720 };
 
+export const SOUND = { volume: 0.6 };
+
 export const ARENA = {
   cx: 640,
   cy: 360,

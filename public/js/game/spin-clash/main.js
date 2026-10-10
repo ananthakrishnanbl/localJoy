@@ -17,6 +17,7 @@ import { createWorld } from "./physics/world.js";
 import { createEffects } from "./render/effects.js";
 import { createRenderer } from "./render/renderer.js";
 import { installStyles } from "./render/styles.js";
+import { createSound } from "./core/sound.js";
 
 export function start(ctx) {
   const { root, signal } = ctx;
@@ -43,6 +44,7 @@ export function start(ctx) {
   const world = createWorld({ roster, bus });
   const effects = createEffects({ colorOf });
   const phone = createPhoneLink({ ctx, bus, roster, match });
+  const sound = createSound({ bus, match, on });
   const renderer = createRenderer({ canvas, roster, match, effects, getInfo });
   effects.bind(bus);
 
@@ -79,6 +81,7 @@ export function start(ctx) {
 
     effects.update(dt, roster.list());
     phone.update(dt);
+    sound.update(dt);
     renderer.draw(dt);
     raf = requestAnimationFrame(frame);
   }
@@ -87,6 +90,7 @@ export function start(ctx) {
   return {
     destroy() {
       cancelAnimationFrame(raf);
+      sound.destroy();
       bus.clear();
       if (keyboard) keyboard.destroy();
       style.remove();
