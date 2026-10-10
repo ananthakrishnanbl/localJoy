@@ -26,6 +26,7 @@ export function createPhoneLink({ ctx, bus, roster, match }) {
     vibrate(e.attacker, 35);
   });
   bus.on("bump", (e) => e.slots.forEach((s) => vibrate(s, 18)));
+  bus.on("wall", (e) => vibrate(e.slot, 14));
   bus.on("dash", (e) => cooldown(e.slot, "dash", ABILITY.cooldown * 1000));
   bus.on("jump", (e) => cooldown(e.slot, "jump", ABILITY.cooldown * 1000));
   bus.on("out", (e) => send(e.slot, { type: "vibrate", ms: [120, 60, 220] }));

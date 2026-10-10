@@ -62,7 +62,8 @@ export function start(ctx) {
   function simulate(h) {
     match.update(h);
     if (match.physicsOn) {
-      world.sim.radius = match.radius;
+      world.sim.shape = match.shape;
+      world.sim.wall = match.wall;
       world.sim.combat = match.combatOn;
       world.sim.abilities = true;
       world.step(h);

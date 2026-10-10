@@ -3,23 +3,36 @@
 //  Change values here to re-balance the game; no other file has magic numbers.
 // =====================================================================
 
-export const CANVAS = { w: 1280, h: 720 };
+export const CANVAS = { w: 1280, h:720 };
 
 export const ARENA = {
   cx: 640,
   cy: 360,
-  radius: 322,       // stadium radius (px). There are NO walls: fall off = out.
-  spawnRatio: 0.6,   // spawn circle as a fraction of the radius
+  radius: 360,        // reach of the lobe corners (px)
+  spawnRatio: 0.55,   // spawn circle as a fraction of the radius
+  // Beyblade-X style outline: 4 flat-edged lobes with open gaps (bays) between them.
+  // The flat lobe edges have a WALL (spinners bounce off); the gaps have no wall, so
+  // that is where spinners fall out. The walls go down when the shrinking starts.
+  lobes: 4,
+  lobeFlatDeg: 20,    // half-width of each flat, walled lobe edge (degrees, seen from the centre)
+  bayRatio: 0.76,     // how deep the gaps cut in (their bottom radius / radius)
 };
 
-// Stops endless stalemates: after `delay` seconds of a round the stadium
-// slowly shrinks. Set enabled:false to turn it off.
+// Stops endless stalemates. The round starts with the walls up. When the shrinking
+// begins the walls go down, and the stadium closes in from the lobed shape to the
+// RED circle, then to the YELLOW circle (both are drawn on the floor).
 export const SHRINK = {
   enabled: true,
-  delay: 25,         // seconds into the round before it starts
-  duration: 35,      // seconds to shrink to the minimum
-  minRadius: 110,
-  growSpeed: 300,    // px/s the stadium re-grows between rounds
+  delay: 30,          // seconds of full stadium (walls up) before the walls start to go down
+  toRed: 40,          // seconds to close from the lobed shape to the red circle
+  holdRed: 25,        // seconds the red circle stays
+  toYellow: 40,       // seconds to close from the red to the yellow circle
+  warn: 3,            // seconds of warning before the walls drop / each shrink starts
+  wallDown: 2,        // seconds the walls take to lower
+  wallUp: 0.8,        // seconds the walls take to rise again before a round
+  redRadius: 205,
+  yellowRadius: 130,
+  regrow: 1.4,        // how fast the stadium re-forms between rounds (stages per second)
 };
 
 export const TOP = { radius: 26, mass: 1 };
@@ -36,10 +49,11 @@ export const PHYSICS = {
   dishPull: 90,        // px/s^2 gentle pull toward the centre (shallow bowl)
   maxSpeed: 1300,
   restitution: 0.9,    // normal top-vs-top bounciness
+  wallRestitution: 0.7,// how lively the lobe walls bounce you back
 };
 
 export const ABILITY = {
-  cooldown: 10,          // seconds, for BOTH dash and jump
+  cooldown: 6,          // seconds, for BOTH dash and jump
   dash: {
     speed: 780,          // velocity burst (px/s)
     duration: 0.3,       // seconds of "battering ram" status

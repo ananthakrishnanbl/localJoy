@@ -1,12 +1,11 @@
-// Big-screen HUD: player cards (points + round status), centre banners,
-// the round-results panel and the final leaderboard.
+// Big-screen HUD: dark glass player cards (points + round status) on the sides, and
+// ivory panels for banners, the round results and the final leaderboard.
 
 import { CANVAS, MATCH, SCORING } from "../config.js";
 import { TAU } from "../core/vec.js";
-import { rgba } from "./color.js";
+import { THEME } from "./theme.js";
 
 const CARD = { w: 260, h: 50, gap: 8, top: 60, margin: 16 };
-const GOLD = "#ffd36b";
 
 function pill(g, x, y, w, h, r) {
   g.beginPath();
@@ -18,13 +17,33 @@ function pill(g, x, y, w, h, r) {
   g.closePath();
 }
 
-function panel(g, x, y, w, h, border) {
-  pill(g, x, y, w, h, 22);
-  g.fillStyle = "rgba(6,9,20,0.9)";
+// Ivory panel with a gold double hairline.
+function panel(g, x, y, w, h) {
+  g.save();
+  pill(g, x, y, w, h, 18);
+  g.shadowColor = "rgba(0,0,0,0.55)";
+  g.shadowBlur = 34;
+  g.shadowOffsetY = 10;
+  g.fillStyle = THEME.ivory;
   g.fill();
-  g.lineWidth = 3;
-  g.strokeStyle = border;
+  g.restore();
+  pill(g, x, y, w, h, 18);
+  g.lineWidth = 2;
+  g.strokeStyle = THEME.gold;
   g.stroke();
+  pill(g, x + 6, y + 6, w - 12, h - 12, 13);
+  g.lineWidth = 1;
+  g.strokeStyle = "rgba(201,166,107,0.5)";
+  g.stroke();
+}
+
+const rule = (g, cx, y, w = 64) => { g.fillStyle = THEME.crimson; g.fillRect(cx - w / 2, y, w, 3); };
+
+function dot(g, x, y, r, color) {
+  g.beginPath(); g.arc(x, y, r, 0, TAU);
+  g.fillStyle = color; g.fill();
+  g.lineWidth = 2; g.strokeStyle = "#ffffff"; g.stroke();
+  g.lineWidth = 1; g.strokeStyle = "rgba(0,0,0,0.25)"; g.stroke();
 }
 
 const bySlot = (a, b) => String(a.slot).localeCompare(String(b.slot), undefined, { numeric: true });
@@ -38,12 +57,12 @@ export function drawHud(g, { roster, match, getInfo }) {
   g.save();
   g.textBaseline = "alphabetic";
 
-  g.font = "800 18px system-ui, sans-serif";
-  g.fillStyle = "rgba(255,255,255,0.85)";
+  g.font = `700 20px ${THEME.serif}`;
+  g.fillStyle = THEME.ivory;
   g.textAlign = "left";
-  g.fillText(match.round ? `ROUND ${match.round} / ${SCORING.rounds}` : "SPIN CLASH", CARD.margin, 40);
+  g.fillText(match.round ? `Round ${match.round} / ${SCORING.rounds}` : "Spin Clash", CARD.margin, 40);
   g.textAlign = "right";
-  if (match.phase === "fight") g.fillText(`ALIVE ${roster.alive().length}`, CANVAS.w - CARD.margin, 40);
+  if (match.phase === "fight") g.fillText(`${roster.alive().length} standing`, CANVAS.w - CARD.margin, 40);
 
   left.forEach((t, i) => card(g, t, CARD.margin, CARD.top + i * (CARD.h + CARD.gap), getInfo(t.slot), match, gained));
   right.forEach((t, i) => card(g, t, CANVAS.w - CARD.margin - CARD.w, CARD.top + i * (CARD.h + CARD.gap), getInfo(t.slot), match, gained));
@@ -53,13 +72,13 @@ export function drawHud(g, { roster, match, getInfo }) {
 }
 
 function statusLine(t, match, gained) {
-  if (t.spectator) return { text: "JOINS NEXT ROUND", color: "rgba(255,255,255,0.7)" };
+  if (t.spectator) return { text: "Joins next round", color: "rgba(246,242,234,0.65)" };
   if (match.phase === "fight") {
-    return t.status === "alive" ? { text: "IN", color: "#6dff9a" } : { text: `OUT · #${t.place}`, color: "#ff8a8a" };
+    return t.status === "alive" ? { text: "In play", color: "#9bd5a6" } : { text: `Out · #${t.place}`, color: "#e39a9a" };
   }
   if (match.phase === "roundEnd") {
     const r = gained.get(t.slot);
-    return r ? { text: `#${r.place}  +${r.points}`, color: GOLD } : { text: "", color: "#fff" };
+    return r ? { text: `#${r.place}   +${r.points}`, color: THEME.goldLight } : { text: "", color: "#fff" };
   }
   return { text: "", color: "#fff" };
 }
@@ -72,15 +91,18 @@ function card(g, t, x, y, info, match, gained) {
   g.globalAlpha = t.spectator ? 0.45 : out ? 0.55 : 1;
 
   pill(g, x, y, CARD.w, CARD.h, 12);
-  g.fillStyle = "rgba(8,12,26,0.74)";
+  g.fillStyle = "rgba(22,22,26,0.82)";
   g.fill();
-  pill(g, x, y, 6, CARD.h, 3);
+  g.lineWidth = 1;
+  g.strokeStyle = "rgba(201,166,107,0.4)";
+  g.stroke();
+  pill(g, x, y, 5, CARD.h, 2.5);
   g.fillStyle = color;
   g.fill();
 
   g.beginPath(); g.arc(x + 30, y + 25, 15, 0, TAU);
-  g.fillStyle = rgba(color, 0.25); g.fill();
-  g.lineWidth = 2; g.strokeStyle = color; g.stroke();
+  g.fillStyle = "rgba(246,242,234,0.1)"; g.fill();
+  g.lineWidth = 1.5; g.strokeStyle = THEME.ivory; g.stroke();
   g.font = "19px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
   g.textAlign = "center"; g.textBaseline = "middle";
   g.fillStyle = "#fff";
@@ -88,69 +110,73 @@ function card(g, t, x, y, info, match, gained) {
   g.textBaseline = "alphabetic";
 
   g.textAlign = "left";
-  g.font = "700 15px system-ui, sans-serif";
+  g.font = `600 15px ${THEME.sans}`;
+  g.fillStyle = THEME.ivory;
   g.fillText(info?.name ?? "Player", x + 54, y + 21);
 
   g.textAlign = "right";
-  g.fillStyle = GOLD;
-  g.font = "800 17px system-ui, sans-serif";
+  g.fillStyle = THEME.goldLight;
+  g.font = `700 18px ${THEME.serif}`;
   g.fillText(`${match.totalOf(t.slot)} pts`, x + CARD.w - 12, y + 21);
 
   const st = statusLine(t, match, gained);
   if (st.text) {
     g.textAlign = "left";
-    g.font = "700 12px system-ui, sans-serif";
+    g.font = `600 12px ${THEME.sans}`;
     g.fillStyle = st.color;
     g.fillText(st.text, x + 54, y + 40);
   }
   g.restore();
 }
 
-function banner(g, title, sub, color, y) {
+function banner(g, title, sub, y) {
   const cx = CANVAS.w / 2;
-  g.font = "900 46px system-ui, sans-serif";
-  const w = Math.max(g.measureText(title).width, 320) + 80;
-  const h = sub ? 108 : 78;
-  panel(g, cx - w / 2, y - 52, w, h, color);
+  g.font = `700 42px ${THEME.serif}`;
+  const w = Math.max(g.measureText(title).width, 320) + 90;
+  const h = sub ? 118 : 88;
+  panel(g, cx - w / 2, y - 58, w, h);
   g.textAlign = "center";
-  g.fillStyle = color;
-  g.fillText(title, cx, y);
+  g.fillStyle = THEME.ink;
+  g.fillText(title, cx, y - 6);
+  rule(g, cx, y + 6);
   if (sub) {
-    g.font = "600 20px system-ui, sans-serif";
-    g.fillStyle = "rgba(255,255,255,0.85)";
-    g.fillText(sub, cx, y + 36);
+    g.font = `500 17px ${THEME.sans}`;
+    g.fillStyle = THEME.inkSoft;
+    g.fillText(sub, cx, y + 38);
   }
 }
 
-function bigText(g, str, y, size, fill, alpha = 1) {
+// Big numbers/words readable on both the white stadium and the dark void.
+function bigText(g, str, y, size, alpha = 1) {
   g.save();
   g.globalAlpha = alpha;
-  g.font = `900 ${size}px system-ui, sans-serif`;
+  g.font = `700 ${size}px ${THEME.serif}`;
   g.textAlign = "center";
-  g.lineWidth = 10;
-  g.strokeStyle = "rgba(0,0,0,0.6)";
+  g.lineJoin = "round";
+  g.lineWidth = Math.max(8, size * 0.07);
+  g.strokeStyle = "rgba(255,255,255,0.95)";
   g.strokeText(str, CANVAS.w / 2, y);
-  g.fillStyle = fill;
+  g.fillStyle = THEME.crimson;
   g.fillText(str, CANVAS.w / 2, y);
   g.restore();
 }
 
 function overlay(g, match, roster, getInfo) {
   if (match.phase === "waiting") {
-    banner(g, "WAITING FOR PLAYERS", `${roster.size} / ${MATCH.minPlayers} connected`, "#ffffff", 360);
+    banner(g, "Waiting for players", `${roster.size} / ${MATCH.minPlayers} connected`, 360);
   } else if (match.phase === "countdown") {
     const left = MATCH.countdown - match.t;
     const n = Math.max(1, Math.ceil(left));
     const frac = n - left; // 0 at the start of each second
-    bigText(g, `ROUND ${match.round} / ${SCORING.rounds}`, 250, 54, GOLD);
-    bigText(g, String(n), 450, Math.round(190 * (1.25 - 0.25 * frac)), "#ffffff", 1 - frac * 0.4);
+    bigText(g, `Round ${match.round} / ${SCORING.rounds}`, 250, 50);
+    bigText(g, String(n), 450, Math.round(190 * (1.25 - 0.25 * frac)), 1 - frac * 0.4);
   } else if (match.phase === "fight") {
-    if (match.t < 0.9) bigText(g, "FIGHT!", 410, 120, GOLD, 1 - match.t / 0.9);
-    if (match.shrinking && match.radius > 115 && Math.sin(performance.now() / 160) > -0.3) {
-      g.font = "800 20px system-ui, sans-serif";
+    if (match.t < 0.9) bigText(g, "Fight!", 410, 120, 1 - match.t / 0.9);
+    if (match.notice && Math.sin(performance.now() / 260) > -0.4) {
+      g.font = `italic 600 20px ${THEME.serif}`;
       g.textAlign = "center";
-      g.fillStyle = "#ff8a7a";
-      g.fillText("⚠ STADIUM SHRINKING ⚠", CANVAS.w / 2, 30);
+      g.fillStyle = THEME.goldLight;
+      g.fillText(match.notice, CANVAS.w / 2, 28);
     }
   } else if (match.phase === "roundEnd") {
     roundPanel(g, match, getInfo);
@@ -161,38 +187,42 @@ function overlay(g, match, roster, getInfo) {
 
 function roundPanel(g, match, getInfo) {
   const rows = match.roundResult;
-  const w = 520, rh = 34, h = 76 + rows.length * rh + 14;
+  const w = 520, rh = 36, h = 96 + rows.length * rh + 16;
   const x = (CANVAS.w - w) / 2, y = (CANVAS.h - h) / 2;
-  panel(g, x, y, w, h, GOLD);
+  const cx = CANVAS.w / 2;
+  panel(g, x, y, w, h);
 
   g.textAlign = "center";
-  g.font = "900 26px system-ui, sans-serif";
-  g.fillStyle = GOLD;
-  g.fillText(`ROUND ${match.round} RESULTS`, CANVAS.w / 2, y + 44);
+  g.font = `700 28px ${THEME.serif}`;
+  g.fillStyle = THEME.ink;
+  g.fillText(`Round ${match.round} Results`, cx, y + 46);
+  rule(g, cx, y + 58);
 
   rows.forEach((r, i) => {
     const info = getInfo(r.slot);
-    const ry = y + 70 + i * rh;
+    const ry = y + 80 + i * rh;
     if (i === 0) {
-      pill(g, x + 14, ry, w - 28, rh - 4, 10);
-      g.fillStyle = "rgba(255,211,107,0.16)";
+      pill(g, x + 18, ry, w - 36, rh - 4, 10);
+      g.fillStyle = "rgba(200,16,46,0.08)";
       g.fill();
+    } else {
+      g.fillStyle = "rgba(0,0,0,0.06)";
+      g.fillRect(x + 30, ry - 2, w - 60, 1);
     }
-    g.textBaseline = "middle";
     const my = ry + (rh - 4) / 2;
+    g.textBaseline = "middle";
     g.textAlign = "left";
-    g.font = "800 18px system-ui, sans-serif";
-    g.fillStyle = i === 0 ? GOLD : "#fff";
-    g.fillText(`#${r.place}`, x + 28, my);
-    g.font = "20px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
-    g.fillText(info?.animal ?? "🌀", x + 82, my);
-    g.font = "700 18px system-ui, sans-serif";
-    g.fillStyle = info?.color ?? "#fff";
-    g.fillText(info?.name ?? "Player", x + 116, my);
+    g.font = `700 20px ${THEME.serif}`;
+    g.fillStyle = THEME.crimson;
+    g.fillText(`#${r.place}`, x + 34, my);
+    dot(g, x + 98, my, 8, info?.color ?? "#999");
+    g.font = `600 18px ${THEME.sans}`;
+    g.fillStyle = THEME.ink;
+    g.fillText(info?.name ?? "Player", x + 120, my);
     g.textAlign = "right";
-    g.font = "800 18px system-ui, sans-serif";
-    g.fillStyle = GOLD;
-    g.fillText(`+${r.points}`, x + w - 28, my);
+    g.font = `700 20px ${THEME.serif}`;
+    g.fillStyle = THEME.crimson;
+    g.fillText(`+${r.points}`, x + w - 34, my);
     g.textBaseline = "alphabetic";
   });
 }
@@ -200,59 +230,65 @@ function roundPanel(g, match, getInfo) {
 function finalPanel(g, match, getInfo) {
   const rows = match.leaderboard;
   const n = SCORING.rounds;
-  const w = 780, rh = 36, h = 162 + rows.length * rh + 34;
+  const w = 780, rh = 36, h = 200 + rows.length * rh + 34;
   const x = (CANVAS.w - w) / 2, y = Math.max(8, (CANVAS.h - h) / 2);
-  panel(g, x, y, w, h, GOLD);
-
-  g.textAlign = "center";
-  g.font = "900 30px system-ui, sans-serif";
-  g.fillStyle = "#fff";
-  g.fillText("FINAL LEADERBOARD", CANVAS.w / 2, y + 44);
+  const cx = CANVAS.w / 2;
+  panel(g, x, y, w, h);
 
   const win = getInfo(match.winnerSlot);
-  g.font = "900 26px system-ui, sans-serif";
-  g.fillStyle = win?.color ?? GOLD;
-  g.fillText(`🏆 ${(win?.name ?? "Player").toUpperCase()} WINS!`, CANVAS.w / 2, y + 84);
+  g.textAlign = "center";
+  g.font = `600 14px ${THEME.sans}`;
+  g.fillStyle = THEME.crimson;
+  g.fillText("C H A M P I O N", cx, y + 40);
+  g.font = `700 40px ${THEME.serif}`;
+  g.fillStyle = THEME.ink;
+  g.fillText(win?.name ?? "Player", cx, y + 86);
+  rule(g, cx, y + 100, 80);
+  g.font = `italic 600 18px ${THEME.serif}`;
+  g.fillStyle = THEME.inkSoft;
+  g.fillText("Final Leaderboard", cx, y + 132);
 
-  const totalX = x + w - 30;
+  const totalX = x + w - 34;
   const roundX = (r) => totalX - 100 - (n - 1 - r) * 74;
-  g.font = "700 14px system-ui, sans-serif";
-  g.fillStyle = "rgba(255,255,255,0.6)";
+  g.font = `600 13px ${THEME.sans}`;
+  g.fillStyle = THEME.inkSoft;
   g.textAlign = "right";
-  for (let r = 0; r < n; r++) g.fillText(`R${r + 1}`, roundX(r), y + 128);
-  g.fillText("TOTAL", totalX, y + 128);
+  for (let r = 0; r < n; r++) g.fillText(`R${r + 1}`, roundX(r), y + 160);
+  g.fillText("TOTAL", totalX, y + 160);
 
   rows.forEach((row, i) => {
     const info = getInfo(row.slot);
-    const ry = y + 140 + i * rh;
+    const ry = y + 170 + i * rh;
     if (i === 0) {
-      pill(g, x + 14, ry, w - 28, rh - 4, 10);
-      g.fillStyle = "rgba(255,211,107,0.18)";
+      pill(g, x + 18, ry, w - 36, rh - 4, 10);
+      g.fillStyle = "rgba(200,16,46,0.08)";
       g.fill();
+    } else {
+      g.fillStyle = "rgba(0,0,0,0.06)";
+      g.fillRect(x + 30, ry - 2, w - 60, 1);
     }
     const my = ry + (rh - 4) / 2;
     g.textBaseline = "middle";
     g.textAlign = "left";
-    g.font = "800 19px system-ui, sans-serif";
-    g.fillStyle = i === 0 ? GOLD : "#fff";
-    g.fillText(`#${row.rank}`, x + 28, my);
-    g.font = "20px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
-    g.fillText(info?.animal ?? "🌀", x + 90, my);
-    g.font = "700 19px system-ui, sans-serif";
-    g.fillStyle = info?.color ?? "#fff";
-    g.fillText(info?.name ?? "Player", x + 126, my);
+    g.font = `700 20px ${THEME.serif}`;
+    g.fillStyle = THEME.crimson;
+    g.fillText(`#${row.rank}`, x + 34, my);
+    dot(g, x + 104, my, 8, info?.color ?? "#999");
+    g.font = `600 18px ${THEME.sans}`;
+    g.fillStyle = THEME.ink;
+    g.fillText(info?.name ?? "Player", x + 128, my);
     g.textAlign = "right";
-    g.font = "600 18px system-ui, sans-serif";
-    g.fillStyle = "rgba(255,255,255,0.8)";
+    g.font = `500 18px ${THEME.sans}`;
+    g.fillStyle = THEME.inkSoft;
     for (let r = 0; r < n; r++) g.fillText(row.rounds[r] === null ? "–" : String(row.rounds[r]), roundX(r), my);
-    g.font = "900 21px system-ui, sans-serif";
-    g.fillStyle = GOLD;
+    g.font = `700 22px ${THEME.serif}`;
+    g.fillStyle = THEME.crimson;
     g.fillText(String(row.total), totalX, my);
     g.textBaseline = "alphabetic";
   });
 
   g.textAlign = "center";
-  g.font = "600 15px system-ui, sans-serif";
-  g.fillStyle = "rgba(255,255,255,0.6)";
-  g.fillText("A new game starts soon…", CANVAS.w / 2, y + h - 14);
+  g.font = `italic 500 14px ${THEME.serif}`;
+  g.fillStyle = THEME.inkSoft;
+  g.fillText("A new game begins shortly", cx, y + h - 16);
 }

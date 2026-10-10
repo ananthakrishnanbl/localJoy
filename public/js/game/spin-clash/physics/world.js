@@ -1,18 +1,20 @@
 // The fixed-step physics world. Knows nothing about drawing or networking:
 // it reads tops from the roster and reports what happened through the bus.
 
-import { ARENA, MATCH } from "../config.js";
+import { MATCH } from "../config.js";
+import { shapeAt } from "../core/stadium.js";
 import { STATUS } from "../entities/top.js";
 import { tickAbilityTimers, processAbilityQueue } from "../entities/abilities.js";
 import { integrate } from "./motion.js";
 import { collideTops } from "./collisions.js";
-import { checkEdge, resolveFalls } from "./arena.js";
+import { applyWalls, checkEdge, resolveFalls } from "./arena.js";
 
 export function createWorld({ roster, bus }) {
   // sim.combat    -> falling off the edge eliminates players
   // sim.abilities -> dash & jump buttons are active
-  // sim.radius    -> current stadium radius (shrinks late in a round)
-  const sim = { combat: false, abilities: false, radius: ARENA.radius };
+  // sim.shape     -> current stadium outline (lobed -> red circle -> yellow circle)
+  // sim.wall      -> wall height 0..1 (walls are solid while up)
+  const sim = { combat: false, abilities: false, shape: shapeAt(0), wall: 1 };
 
   function updateStatus(t, h) {
     if (t.hitFlash > 0) t.hitFlash = Math.max(0, t.hitFlash - h * 5);
@@ -41,6 +43,7 @@ export function createWorld({ roster, bus }) {
 
     collideTops(list, bus);
 
+    for (const t of list) applyWalls(t, sim, bus);
     const falls = [];
     for (const t of list) checkEdge(t, sim, falls);
     if (falls.length) resolveFalls(falls, sim, bus);

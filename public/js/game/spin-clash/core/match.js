@@ -4,13 +4,14 @@
 // (SCORING.points). After the last round the leaderboard decides the winner.
 // No drawing, no networking.
 
-import { ARENA, MATCH, SCORING, SHRINK } from "../config.js";
-import { clamp, lerp } from "./vec.js";
+import { MATCH, SCORING, SHRINK } from "../config.js";
+import { shapeAt, stageAt } from "./stadium.js";
 
 export function createMatch({ roster, bus }) {
   const table = new Map(); // slot -> { rounds: [points|null ...], total, firsts }
   let order = [];          // uids in the order they were eliminated this round
   let fighters = 0;        // how many played this round
+  let wallsDownSent = false;
 
   const row = (slot) => {
     if (!table.has(slot)) table.set(slot, { rounds: Array(SCORING.rounds).fill(null), total: 0, firsts: 0 });
@@ -21,8 +22,11 @@ export function createMatch({ roster, bus }) {
     phase: "waiting",
     t: 0,              // seconds spent in the current phase
     round: 0,          // 1..SCORING.rounds
-    radius: ARENA.radius,
-    shrinking: false,
+    stage: 0,          // 0 = lobed stadium, 1 = red circle, 2 = yellow circle
+    shape: shapeAt(0),
+    wall: 1,           // wall height 0..1 (the lobe walls go down when the shrinking starts)
+    shrinking: false,  // true while the stadium is closing in (or about to)
+    notice: "",        // short message for the big screen ("The walls are coming down" ...)
     roundResult: [],   // [{ slot, place, points }] best first, after each round
     leaderboard: [],   // [{ slot, rank, rounds, total }] after the last round
     winnerSlot: null,  // overall winner after the last round
@@ -41,7 +45,7 @@ export function createMatch({ roster, bus }) {
 
     update(h) {
       m.t += h;
-      updateRadius(h);
+      updateStage(h);
 
       // People joined/left before the fight: re-space everyone.
       if (roster.isDirty() && (m.phase === "waiting" || m.phase === "countdown")) {
@@ -75,17 +79,37 @@ export function createMatch({ roster, bus }) {
     },
   };
 
-  function updateRadius(h) {
+  function updateStage(h) {
     if (m.phase === "fight") {
-      const k = SHRINK.enabled ? clamp((m.t - SHRINK.delay) / SHRINK.duration, 0, 1) : 0;
-      m.radius = lerp(ARENA.radius, SHRINK.minRadius, k * k * (3 - 2 * k));
-      m.shrinking = k > 0;
+      const s = stageAt(m.t);
+      m.stage = s.stage;
+      m.shrinking = s.moving || s.warn;
+
+      // Walls go down once the shrinking starts.
+      const lowering = SHRINK.enabled && m.t >= SHRINK.delay;
+      if (lowering) {
+        if (m.wall > 0) m.wall = Math.max(0, m.wall - h / SHRINK.wallDown);
+        if (!wallsDownSent) { wallsDownSent = true; bus.emit({ type: "wallsDown" }); }
+      } else {
+        m.wall = Math.min(1, m.wall + h / SHRINK.wallUp);
+      }
+
+      if (SHRINK.enabled && m.t >= SHRINK.delay - SHRINK.warn && m.t < SHRINK.delay) m.notice = "The walls are about to fall";
+      else if (lowering && m.wall > 0) m.notice = "The walls are coming down";
+      else if (s.moving) m.notice = s.stage < 1 ? "The stadium is closing in" : "The final circle is closing in";
+      else if (s.warn) m.notice = "The final circle is about to close in";
+      else m.notice = "";
     } else if (m.phase !== "roundEnd") {
-      m.radius = Math.min(ARENA.radius, m.radius + SHRINK.growSpeed * h);
+      // between rounds the stadium re-forms and the walls rise again
+      m.stage = Math.max(0, m.stage - SHRINK.regrow * h);
+      m.wall = Math.min(1, m.wall + h / SHRINK.wallUp);
       m.shrinking = false;
+      m.notice = "";
     } else {
       m.shrinking = false;
+      m.notice = "";
     }
+    m.shape = shapeAt(m.stage);
   }
 
   function newSeries() {
@@ -115,6 +139,7 @@ export function createMatch({ roster, bus }) {
       bus.emit({ type: "round", round: m.round });
     } else if (phase === "fight") {
       fighters = roster.list().filter((t) => !t.spectator).length;
+      wallsDownSent = false;
       order = [];
       roster.clearQueues();
       bus.emit({ type: "fight" });

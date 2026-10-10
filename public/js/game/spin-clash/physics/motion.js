@@ -30,7 +30,7 @@ export function integrate(t, h, sim) {
     const dx = t.x - ARENA.cx, dy = t.y - ARENA.cy;
     const d = Math.hypot(dx, dy);
     if (d > 1e-3) {
-      const pull = PHYSICS.dishPull * Math.min(1, d / sim.radius);
+      const pull = PHYSICS.dishPull * Math.min(1, d / sim.shape.base);
       ax -= (dx / d) * pull;
       ay -= (dy / d) * pull;
     }

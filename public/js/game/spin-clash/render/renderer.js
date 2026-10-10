@@ -25,7 +25,7 @@ export function createRenderer({ canvas, roster, match, effects, getInfo }) {
       g.save();
       const s = effects.shake;
       if (s > 0.05) g.translate(rand(-s, s), rand(-s, s));
-      paintArena(match.radius, match.shrinking);
+      paintArena(match.shape, match.shrinking, match.wall);
       effects.drawUnder(g);
       tops.sort((a, b) => depth(a) - depth(b));
       for (const t of tops) drawTop(g, t, getInfo(t.slot));

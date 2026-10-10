@@ -8,6 +8,7 @@
 import { installPadStyles } from "./spinner/styles.js";
 import { createStick } from "./spinner/stick.js";
 import { createAbilityButton } from "./spinner/abilityButton.js";
+import { ICONS } from "./spinner/icons.js";
 
 export default {
   id: "spinner",
@@ -26,10 +27,10 @@ export default {
 
     const stick = createStick(left, { onChange: (x, y) => io.send({ type: "stick", x, y }) });
     const jump = createAbilityButton({
-      id: "jump", label: "JUMP", icon: "⤴", onPress: () => io.send({ type: "btn", id: "jump", pressed: true }),
+      id: "jump", label: "JUMP", icon: ICONS.jump, onPress: () => io.send({ type: "btn", id: "jump", pressed: true }),
     });
     const dash = createAbilityButton({
-      id: "dash", label: "DASH", icon: "⚡", onPress: () => io.send({ type: "btn", id: "dash", pressed: true }),
+      id: "dash", label: "DASH", icon: ICONS.dash, onPress: () => io.send({ type: "btn", id: "dash", pressed: true }),
     });
     right.append(jump.el, dash.el);
 

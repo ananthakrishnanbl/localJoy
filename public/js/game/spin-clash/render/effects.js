@@ -3,6 +3,7 @@
 
 import { TAU, rand } from "../core/vec.js";
 import { rgba } from "./color.js";
+import { THEME } from "./theme.js";
 
 export function createEffects({ colorOf }) {
   const sparks = [], rings = [], texts = [], ghosts = [];
@@ -24,33 +25,44 @@ export function createEffects({ colorOf }) {
 
   function bind(bus) {
     bus.on("bump", (e) => {
-      burst(e.x, e.y, 4 + Math.round(e.power * 8), { colors: ["#ffffff", ...e.slots.map(colorOf)], speed: [100, 100 + e.power * 260] });
-      ring(e.x, e.y, 22 + e.power * 14, "#ffffff", 0.2, 2);
+      burst(e.x, e.y, 4 + Math.round(e.power * 8), { colors: [THEME.ink, THEME.gold, ...e.slots.map(colorOf)], speed: [100, 100 + e.power * 260] });
+      ring(e.x, e.y, 22 + e.power * 14, THEME.ink, 0.2, 2);
       bump(e.power * 2.5);
+    });
+    bus.on("wall", (e) => {
+      burst(e.x, e.y, 3 + Math.round(e.power * 8), {
+        angle: Math.atan2(-e.ny, -e.nx), spread: 1.5, colors: [THEME.gold, THEME.ink, "#c9c9d0"], speed: [90, 90 + e.power * 260], life: [0.2, 0.45],
+      });
+      bump(e.power * 2.5);
+    });
+    bus.on("wallsDown", () => {
+      ring(640, 360, 360, THEME.gold, 0.9, 7);
+      text(640, 330, "The walls are down!", THEME.crimson);
+      bump(7);
     });
     bus.on("throw", (e) => {
       const c = colorOf(e.attacker);
-      burst(e.x, e.y, 34, { angle: Math.atan2(e.dy, e.dx), spread: 1.4, colors: [c, "#ffffff", "#ffd36b"], speed: [200, 700], life: [0.3, 0.7], size: 3 });
-      ring(e.x, e.y, 80, "#ffffff", 0.35, 5);
+      burst(e.x, e.y, 34, { angle: Math.atan2(e.dy, e.dx), spread: 1.4, colors: [c, THEME.crimson, THEME.gold, THEME.ink], speed: [200, 700], life: [0.3, 0.7], size: 3 });
+      ring(e.x, e.y, 80, THEME.crimson, 0.35, 5);
       ring(e.x, e.y, 50, c, 0.45, 4);
-      text(e.x, e.y - 34, "SMASH!", "#ffd36b");
+      text(e.x, e.y - 34, "Smash!", THEME.crimson);
       bump(10);
     });
     bus.on("dash", (e) => {
       const c = colorOf(e.slot);
       ring(e.x, e.y, 44, c, 0.3, 3);
-      burst(e.x, e.y, 12, { angle: Math.atan2(-e.dy, -e.dx), spread: 0.9, colors: [c, "#ffffff"], speed: [200, 500] });
+      burst(e.x, e.y, 12, { angle: Math.atan2(-e.dy, -e.dx), spread: 0.9, colors: [c, THEME.ink], speed: [200, 500] });
     });
-    bus.on("jump", (e) => ring(e.x, e.y, 38, "#bfe9ff", 0.35, 3));
+    bus.on("jump", (e) => ring(e.x, e.y, 38, THEME.ink, 0.35, 3));
     bus.on("land", (e) => {
-      ring(e.x, e.y, 34, "#cfd6ee", 0.3, 3);
-      burst(e.x, e.y, 8, { colors: ["#cfd6ee", "#8f9bc4"], speed: [60, 180], life: [0.2, 0.4] });
+      ring(e.x, e.y, 34, THEME.inkSoft, 0.3, 3);
+      burst(e.x, e.y, 8, { colors: [THEME.inkSoft, THEME.gold], speed: [60, 180], life: [0.2, 0.4] });
     });
     bus.on("out", (e) => {
       const c = colorOf(e.slot);
       ring(e.x, e.y, 70, c, 0.5, 4);
-      burst(e.x, e.y, 18, { colors: [c, "#ffffff"], speed: [80, 380], life: [0.3, 0.7] });
-      text(e.x, e.y - 30, "OUT!", c);
+      burst(e.x, e.y, 18, { colors: [c, THEME.ink], speed: [80, 380], life: [0.3, 0.7] });
+      text(e.x, e.y - 30, "Out!", THEME.ink);
       bump(4);
     });
   }
@@ -69,7 +81,7 @@ export function createEffects({ colorOf }) {
     tick++;
     for (const t of tops) {
       if ((t.dashT > 0 || t.thrownT > 0) && t.status === "alive" && tick % 2 === 0) {
-        ghosts.push({ x: t.x, y: t.y - t.z * 0.55, color: t.thrownT > 0 && t.dashT <= 0 ? "#ffffff" : colorOf(t.slot), r: t.r, life: 0.26, max: 0.26 });
+        ghosts.push({ x: t.x, y: t.y - t.z * 0.55, color: t.thrownT > 0 && t.dashT <= 0 ? THEME.ink : colorOf(t.slot), r: t.r, life: 0.26, max: 0.26 });
       }
     }
     if (ghosts.length > 90) ghosts.splice(0, ghosts.length - 90);
@@ -102,7 +114,6 @@ export function createEffects({ colorOf }) {
 
   function drawOver(g) {
     g.save();
-    g.globalCompositeOperation = "lighter";
     g.lineCap = "round";
     for (const s of sparks) {
       const k = s.life / s.max;
@@ -116,9 +127,10 @@ export function createEffects({ colorOf }) {
     g.restore();
 
     g.textAlign = "center";
-    g.font = "800 22px system-ui, sans-serif";
-    g.lineWidth = 4;
-    g.strokeStyle = "rgba(0,0,0,0.7)";
+    g.font = `italic 700 26px ${THEME.serif}`;
+    g.lineJoin = "round";
+    g.lineWidth = 5;
+    g.strokeStyle = "rgba(255,255,255,0.95)";
     for (const t of texts) {
       g.globalAlpha = Math.min(1, t.life / (t.max * 0.5));
       g.strokeText(t.str, t.x, t.y);
