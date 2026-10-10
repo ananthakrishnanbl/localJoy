@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Echo banner">
+  <defs>
+    <filter id="padGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="padGlow2" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <!-- ============ SCREEN BACKGROUND ============ -->
+  <rect width="1200" height="400" fill="#1e2246"/>
+
+  <!-- ============ HEADER BAR ============ -->
+  <rect x="0" y="0" width="1200" height="40" fill="#1a1e3d"/>
+  <line x1="0" y1="40.5" x2="1200" y2="40.5" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+
+  <text x="20" y="26"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="14" font-weight="800"
+        fill="#ffffff" letter-spacing="1.5">ECHO</text>
+
+  <!-- Round pill -->
+  <rect x="546" y="8" width="108" height="24" rx="12" fill="rgba(91,141,239,0.16)"/>
+  <text x="600" y="25" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="13" font-weight="700"
+        fill="#8ab4f8">Round 4</text>
+
+  <!-- Phase label -->
+  <text x="1180" y="26" text-anchor="end"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="12" font-weight="700"
+        fill="#5a6188" letter-spacing="1.5">WATCH THE SEQUENCE</text>
+
+  <!-- ============ TIMER STRIP ============ -->
+  <rect x="0" y="41" width="1200" height="38" fill="rgba(255,255,255,0.04)"/>
+  <text x="600" y="64" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="14" font-weight="600"
+        fill="#8b93b8">Watching — 4 colors</text>
+
+  <!-- ============ BOARD (2x2) ============ -->
+  <!-- Blue pad: GLOWING (currently lit in the sequence) -->
+  <g filter="url(#padGlow)" opacity="0.9">
+    <rect x="40" y="88" width="328" height="138" rx="14" fill="#5b8def"/>
+  </g>
+  <g filter="url(#padGlow2)" opacity="0.55">
+    <rect x="40" y="88" width="328" height="138" rx="14" fill="#8ab4f8"/>
+  </g>
+  <rect x="40" y="88" width="328" height="138" rx="14" fill="#5b8def"/>
+  <rect x="40" y="88" width="328" height="138" rx="14"
+        fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="2"/>
+
+  <!-- Yellow pad (dim) -->
+  <rect x="392" y="88" width="328" height="138" rx="14"
+        fill="#ffb400" opacity="0.32"/>
+
+  <!-- Green pad (dim) -->
+  <rect x="40" y="250" width="328" height="138" rx="14"
+        fill="#2fbf71" opacity="0.32"/>
+
+  <!-- Red pad (dim) -->
+  <rect x="392" y="250" width="328" height="138" rx="14"
+        fill="#e5484d" opacity="0.32"/>
+
+  <!-- ============ PLAYER LIST ============ -->
+  <!-- Card 1: Baba, score 5, alive -->
+  <rect x="760" y="88" width="400" height="68" rx="12" fill="#232850"/>
+  <rect x="760.5" y="88.5" width="399" height="67" rx="12"
+        fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <circle cx="782" cy="122" r="8" fill="#ff5a5f"/>
+  <text x="802" y="127"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="16" font-weight="700"
+        fill="#ffffff">Baba</text>
+  <text x="1144" y="129" text-anchor="end"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="24" font-weight="800"
+        fill="#8ab4f8">5</text>
+
+  <!-- Card 2: Riya, score 4, alive -->
+  <rect x="760" y="165" width="400" height="68" rx="12" fill="#232850"/>
+  <rect x="760.5" y="165.5" width="399" height="67" rx="12"
+        fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <circle cx="782" cy="199" r="8" fill="#2aa9e0"/>
+  <text x="802" y="204"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="16" font-weight="700"
+        fill="#ffffff">Riya</text>
+  <text x="1144" y="206" text-anchor="end"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="24" font-weight="800"
+        fill="#8ab4f8">4</text>
+
+  <!-- Card 3: Arjun, score 3, alive -->
+  <rect x="760" y="242" width="400" height="68" rx="12" fill="#232850"/>
+  <rect x="760.5" y="242.5" width="399" height="67" rx="12"
+        fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <circle cx="782" cy="276" r="8" fill="#ffb400"/>
+  <text x="802" y="281"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="16" font-weight="700"
+        fill="#ffffff">Arjun</text>
+  <text x="1144" y="283" text-anchor="end"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="24" font-weight="800"
+        fill="#8ab4f8">3</text>
+
+  <!-- Card 4: Meera, score 2, OUT (dimmed) -->
+  <rect x="760" y="319" width="400" height="68" rx="12" fill="#1c2140"/>
+  <rect x="760.5" y="319.5" width="399" height="67" rx="12"
+        fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+  <circle cx="782" cy="353" r="8" fill="#a78bfa" opacity="0.4"/>
+  <text x="802" y="358"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="16" font-weight="700"
+        fill="#5a6188">Meera</text>
+  <text x="1144" y="360" text-anchor="end"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="24" font-weight="800"
+        fill="#5a6188">2</text>
+  <text x="802" y="373"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="10" font-weight="700"
+        fill="#5a6188" letter-spacing="1.5">OUT</text>
+</svg>

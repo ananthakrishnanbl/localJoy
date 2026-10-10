@@ -12,6 +12,7 @@ export const CONTROLLERS = {
   ctf: "Left stick moves · right stick looks · FIRE button above it",
   turner: "Left / Right tap steering",
   stopper: "One big tap button",
+  echo: "Four color buttons",
 };
 
 export const GAMES = [
@@ -147,6 +148,23 @@ export const GAMES = [
       tags: ["Maze", "Race", "Party"],
       controller: "pad",
       entry: "/js/game/rat-race/main.js",
+    },
+    {
+      id: "echo",
+      title: "Echo",
+      tagline: "Watch the sequence. Echo it back.",
+      description:
+      "The big screen plays a sequence of colors, one at a time. When the countdown ends, tap the same colors in the same order on your phone. Round 1 has one color, then two, then three — it grows every round. Three seconds per color of input time, shown as a countdown bar. One wrong tap and you're out; last player standing keeps going until they fail. Score is how many rounds you survived. Plays up to 10 players.",
+      cover:  "/assets/games/echo-cover.svg",
+      banner: "/assets/games/echo-banner.svg",
+      emoji: "🎨",
+      color: "#5b8def",
+      minPlayers: 1,
+      maxPlayers: 10,
+      rating: 4.5,
+      tags: ["Memory", "Party", "Precision"],
+      controller: "echo",
+      entry: "/js/game/echo/main.js",
     },
 ];
 
