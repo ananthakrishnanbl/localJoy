@@ -148,6 +148,22 @@ export const GAMES = [
       controller: "pad",
       entry: "/js/game/rat-race/main.js",
     },
+    {
+      id: "rope-race",
+      title: "Rope Race",
+      tagline: "Tied together. Don't let go.",
+      description: "Race through a freshly randomised obstacle course while roped to your teammates. With 4+ players pick RED or BLUE; with fewer you all team up. A = jump, B = sprint. Each player has 3 hearts - if one runs out the team restarts. If two players fall, the whole team is dragged down!",
+      cover:  "/assets/games/rope-race-cover.svg",
+      banner: "/assets/games/rope-race-banner.svg",
+      emoji: "🪢",
+      color: "#7a5bff",
+      minPlayers: 2,
+      maxPlayers: 10,
+      rating: 4.5,
+      tags: ["Co-op", "Race", "3D"],
+      controller: "pad",
+      entry: "/js/game/rope-race/main.js",
+    },
 ];
 
 export const getGame = (id) => GAMES.find((g) => g.id === id);
