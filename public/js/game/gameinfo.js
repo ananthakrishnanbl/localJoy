@@ -13,6 +13,7 @@ export const CONTROLLERS = {
   turner: "Left / Right tap steering",
   stopper: "One big tap button",
   echo: "Four color buttons",
+  spinner: "One joystick + Jump & Dash buttons",
 };
 
 export const GAMES = [
@@ -165,6 +166,23 @@ export const GAMES = [
       tags: ["Memory", "Party", "Precision"],
       controller: "echo",
       entry: "/js/game/echo/main.js",
+    },
+    {
+      id: "spin-clash",
+      title: "Battle Tops",
+      tagline: "Last top spinning wins",
+      description:
+        "Battle spinning tops in a stadium. Steer with the left stick, DASH to smash rivals and JUMP to dodge - each has a 6 second cooldown. Don't fly out of the ring!",
+      cover: "/assets/games/spin-clash-cover.svg",
+      banner: "/assets/games/spin-clash-banner.svg",
+      emoji: "🌀",
+      color: "#d5dbdb",
+      minPlayers: 2,
+      maxPlayers: 10,
+      rating: 4.5,
+      tags: ["Battle", "Party", "Physics"],
+      controller: "spinner",
+      entry: "/js/game/spin-clash/main.js",
     },
 ];
 

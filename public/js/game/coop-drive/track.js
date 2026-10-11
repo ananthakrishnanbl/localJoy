@@ -150,8 +150,8 @@ export function createTrack(rng) {
   }
 
   // Visual Finish Line Mesh added at 2000m
-  const finLoc = sample(START_S + 2000, 0);
-  const finW = halfAt(START_S + 2000) * 2.2;
+  const finLoc = sample(START_S + 2500, 0);
+  const finW = halfAt(START_S + 2500) * 2.2;
   const finishGeo = own(new THREE.PlaneGeometry(finW, 2));
   const finishMat = own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
   const finishMesh = new THREE.Mesh(finishGeo, finishMat);

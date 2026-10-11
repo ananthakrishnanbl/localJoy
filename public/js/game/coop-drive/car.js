@@ -2,7 +2,7 @@ import * as THREE from "./three.js";
 import { GLTFLoader } from "./three.js";
 
 export const CAR_COLORS = [
-  { name: "red",    hex: 0xff3b3b, css: "#ff3b3b", scale: [1.156, 1.201, 1.201], pos: [0, 0, 0], rot: [0, 0, 0] },
+  { name: "red",    hex: 0xff3b3b, css: "#ff3b3b", scale: [1.156, 1.201, 1.201], pos: [0, -0.3, -0.8], rot: [0, 0, 0] },
   { name: "blue",   hex: 0x3b8bff, css: "#3b8bff", scale: [0.520, 0.482, 0.482], pos: [0, 0, 0], rot: [0, 0, 0] },
   { name: "yellow", hex: 0xffc233, css: "#ffc233", scale: [0.01, 0.01, 0.01], pos: [0, 0, 0], rot: [0, 0, 0] },
   { name: "green",  hex: 0x35d07f, css: "#35d07f", scale: [1.172, 1.072, 1.072], pos: [0, 1, 0], rot: [0, 0, 0] },
