@@ -4,6 +4,8 @@ const express = require('express');
 const { ExpressPeerServer } = require('peer');
 const QRCode = require('qrcode');
 
+let a=0;
+
 const PORT = Number(process.env.PORT) || 3000;   // hosts set PORT; falls back to 3000 locally
 const app = express();
 const server = http.createServer(app);
@@ -14,6 +16,8 @@ app.use('/peerjs', ExpressPeerServer(server, { path: '/' }));
 
 // Generates the QR code image shown on the console page
 app.get('/qr.svg', async (req, res) => {
+  a++;
+  console(`NEW REQUEST ${a}`);
   const text = String(req.query.text || '');
   if (!text || text.length > 300) return res.status(400).end();
   try {
