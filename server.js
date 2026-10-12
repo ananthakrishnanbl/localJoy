@@ -17,7 +17,7 @@ app.use('/peerjs', ExpressPeerServer(server, { path: '/' }));
 // Generates the QR code image shown on the console page
 app.get('/qr.svg', async (req, res) => {
   a++;
-  console(`NEW REQUEST ${a}`);
+  console.log(`NEW REQUEST ${a}`);
   const text = String(req.query.text || '');
   if (!text || text.length > 300) return res.status(400).end();
   try {
