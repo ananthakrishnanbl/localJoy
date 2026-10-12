@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Echo">
+  <defs>
+    <filter id="echoGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <rect width="400" height="400" fill="#1e2246"/>
+  <ellipse cx="200" cy="180" rx="180" ry="150" fill="#5b8def" opacity="0.08"/>
+
+  <!-- Blue pad: glowing -->
+  <g filter="url(#echoGlow)" opacity="0.9">
+    <rect x="40" y="40" width="140" height="140" rx="20" fill="#5b8def"/>
+  </g>
+  <rect x="40" y="40" width="140" height="140" rx="20" fill="#5b8def"/>
+  <rect x="40" y="40" width="140" height="140" rx="20" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>
+
+  <!-- Yellow, green, red: dim -->
+  <rect x="220" y="40" width="140" height="140" rx="20" fill="#ffb400" opacity="0.35"/>
+  <rect x="40" y="220" width="140" height="140" rx="20" fill="#2fbf71" opacity="0.35"/>
+  <rect x="220" y="220" width="140" height="140" rx="20" fill="#e5484d" opacity="0.35"/>
+
+  <!-- Title -->
+  <text x="200" y="388" text-anchor="middle"
+        font-family="Fredoka, system-ui, sans-serif"
+        font-size="26" font-weight="700"
+        fill="#ffffff" letter-spacing="6">ECHO</text>
+</svg>

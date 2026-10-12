@@ -1,28 +1,24 @@
 // Rat Race — simultaneous fog-of-war maze escape.
 //
-// Rules:
+// Rules (unchanged):
 //   * 1-6 players, everyone starts at the same cell
 //   * one randomly generated maze per round, shared by all players
 //   * each player has their own camera on the shared maze
 //   * fog of war: only cells reachable through open corridors are visible
 //   * the rat's colour is the temperature hint (red = hot, blue = freezing)
-//   * other players appear as GREEN rats (identity hidden, you are the only
-//     rat in your own slot colour)
-//   * up to 3 green pills spawn in random DEAD-ENDS of the maze (anywhere,
-//     not necessarily in the freezing area; start-adjacent dead-ends are
-//     excluded so a pill can't be triggered on spawn). Stepping on one
-//     triggers a GLOBAL SHOCKWAVE: every active player is flung BACKWARD
-//     along the shortest path, N cells based on their OWN temperature
-//     bucket at that moment (FREEZING 0 / COLD 4 / COOL 8 / WARM 12 /
-//     HOT 16). The picker gets a free swing if they are FREEZING, and
-//     everyone ahead of them pays. Pill is removed on pickup.
-//   * movement: joystick OR the Y/X/B/A buttons (Y = up, A = down,
-//     X = left, B = right). Joystick wins if both are used.
-//   * first rat to reach the CHEESE gets 1st place; 20 s window for the rest
+//   * other players appear as GREEN rats (you are the only rat in your
+//     own slot colour; identity of others is hidden)
+//   * up to 3 green pills spawn in random DEAD-ENDS. Stepping on one
+//     FREEZES every OTHER active player for a few seconds based on their
+//     temperature bucket: HOT 5s · WARM 4s · COOL 2s · COLD 1s · FREEZING 0s
+//   * movement: joystick OR buttons (Y up, A down, X left, B right)
+//   * first rat to the CHEESE gets 1st place; 20 s window for the rest
 //   * DNF for anyone still racing when the window closes
 //   * 1-second compass pulse every 30 s for FREEZING players
 //   * ready phase: everyone presses any button; then a brand new maze
 //   * the game never exits on its own
+//
+// Theme: dark navy (localJoy chrome). Fredoka everywhere.
 
 const VIEW_W = 1280, VIEW_H = 720;
 const MAZE_W = 21, MAZE_H = 15;
@@ -32,31 +28,35 @@ const MOVE_SPEED = 5;
 const COUNTDOWN_TIME = 3.2;
 const DNF_WAIT = 20;
 const COMPASS_PERIOD = 30;
-const COMPASS_DURATION = 10;
+const COMPASS_DURATION = 1;
 const PILL_COUNT = 3;
-const PILL_MIN_GAP = 5;              // Manhattan distance between pills (cells)
-const PILL_START_CLEAR = 3;          // keep pills at least this far from START
-const OTHER_RAT_COLOR = "#3ecf6e";   // all non-self rats are green
+const PILL_MIN_GAP = 5;
+const PILL_START_CLEAR = 3;
 
-// Teleport distance (in cells along the shortest path) by temperature bucket.
-// FREEZING is 0: the freezing picker gets a free swing.
-const TELEPORT = {
-  FREEZING: 0,
-  COLD: 4,
-  COOL: 8,
-  WARM: 12,
-  HOT: 16,
-};
+// Player / object colours.
+const OTHER_RAT_COLOR = "#3ecf6e";
 
-// Button → movement direction (matches the SNES diamond layout).
-const BUTTON_DIR = {
-  Y: "up",
-  A: "down",
-  X: "left",
-  B: "right",
-};
+// Freeze duration in seconds by the victim's temperature bucket.
+const FREEZE = { HOT: 5, WARM: 4, COOL: 2, COLD: 1, FREEZING: 0 };
+const BUTTON_DIR = { Y: "up", A: "down", X: "left", B: "right" };
+
+// -------- Palette (matches localJoy chrome) --------
+const BG          = "#1e2246";
+const FOG         = "#161a38";
+const CARD        = "#1a1e3d";
+const CARD_EDGE   = "rgba(255,255,255,0.08)";
+const INK         = "#ffffff";
+const MUTED       = "#8b93b8";
+const FAINT       = "#5a6188";
+const FLOOR_RGB   = [200, 212, 240];
+const WALL_RGB    = [8, 12, 36];
+const WALL_HI_RGB = [91, 141, 239];
+const BLUE        = "#5b8def";
+const GOLD        = "#ffb400";
 
 const lerp = (a, b, t) => a + (b - a) * t;
+const rgbaStr = ([r, g, b], a) => `rgba(${r},${g},${b},${a})`;
+const rgbStr  = ([r, g, b]) => `rgb(${r},${g},${b})`;
 
 function ordinal(n) {
   const v = n % 100;
@@ -72,11 +72,10 @@ function hexToRgb(hex) {
     parseInt(hex.slice(5, 7), 16),
   ];
 }
-const rgbaStr = ([r, g, b], a) => `rgba(${r},${g},${b},${a})`;
 
 /* ---------------- Temperature colour scale ---------------- */
-const HOT_RGB = [229, 72, 77];    // #e5484d (site red)
-const COLD_RGB = [59, 139, 255];  // #3b8bff (site blue)
+const HOT_RGB = [229, 72, 77];
+const COLD_RGB = [59, 139, 255];
 
 function tempBucket(ratio) {
   if (ratio < 0.15) return "HOT";
@@ -94,7 +93,6 @@ function tempRGB(ratio) {
     Math.round(HOT_RGB[2] * (1 - t) + COLD_RGB[2] * t),
   ];
 }
-const rgbStr = ([r, g, b]) => `rgb(${r},${g},${b})`;
 
 /* ---------------- Maze ---------------- */
 function generateMaze(w, h) {
@@ -132,19 +130,22 @@ function generateMaze(w, h) {
   return { w, h, cells };
 }
 
+// BFS distances. Uses a moving head index instead of Array.shift().
 function bfsDistances(maze, from) {
   const dist = [];
   for (let y = 0; y < maze.h; y++) dist.push(new Array(maze.w).fill(-1));
   dist[from.y][from.x] = 0;
+
   const q = [{ x: from.x, y: from.y }];
+  let head = 0;
   const dirs = [
     { dx: 0, dy: -1, wall: "n" },
     { dx: 1, dy: 0, wall: "e" },
     { dx: 0, dy: 1, wall: "s" },
     { dx: -1, dy: 0, wall: "w" },
   ];
-  while (q.length) {
-    const { x, y } = q.shift();
+  while (head < q.length) {
+    const { x, y } = q[head++];
     const cell = maze.cells[y][x];
     const d = dist[y][x];
     for (const dir of dirs) {
@@ -158,29 +159,28 @@ function bfsDistances(maze, from) {
   return dist;
 }
 
+// Single Map: key = x*1000 + y, value = BFS depth.
 function visibleCells(maze, cx, cy, maxDepth) {
-  const set = new Set();
   const map = new Map();
-  const k = (x, y) => x * 1000 + y;
-  set.add(k(cx, cy));
-  map.set(k(cx, cy), 0);
+  map.set(cx * 1000 + cy, 0);
   const q = [[cx, cy, 0]];
+  let head = 0;
   const dirs = [[0, -1, "n"], [1, 0, "e"], [0, 1, "s"], [-1, 0, "w"]];
-  while (q.length) {
-    const [x, y, d] = q.shift();
+  while (head < q.length) {
+    const [x, y, d] = q[head++];
     if (d >= maxDepth) continue;
     const cell = maze.cells[y][x];
-    for (const [dx, dy, wall] of dirs) {
+    for (let i = 0; i < 4; i++) {
+      const dx = dirs[i][0], dy = dirs[i][1], wall = dirs[i][2];
       if (cell[wall]) continue;
       const nx = x + dx, ny = y + dy;
-      const kk = k(nx, ny);
-      if (set.has(kk)) continue;
-      set.add(kk);
+      const kk = nx * 1000 + ny;
+      if (map.has(kk)) continue;
       map.set(kk, d + 1);
       q.push([nx, ny, d + 1]);
     }
   }
-  return { set, map };
+  return map;
 }
 
 function exitDirection(maze, distToExit, x, y) {
@@ -203,39 +203,7 @@ function exitDirection(maze, distToExit, x, y) {
   return best ? best.dir : null;
 }
 
-// The single step that moves AWAY from the exit (distance increases by 1).
-function awayDirection(maze, distToExit, x, y) {
-  const cur = distToExit[y][x];
-  const cell = maze.cells[y][x];
-  const dirs = [
-    { dx: 0, dy: -1, wall: "n", dir: "n" },
-    { dx: 1, dy: 0,  wall: "e", dir: "e" },
-    { dx: 0, dy: 1,  wall: "s", dir: "s" },
-    { dx: -1, dy: 0, wall: "w", dir: "w" },
-  ];
-  for (const d of dirs) {
-    if (cell[d.wall]) continue;
-    const nx = x + d.dx, ny = y + d.dy;
-    const nd = distToExit[ny]?.[nx] ?? -1;
-    if (nd === cur + 1) return d.dir;
-  }
-  return null;
-}
-
-function teleportAwayFromExit(maze, distToExit, x, y, steps) {
-  let cx = x, cy = y;
-  for (let i = 0; i < steps; i++) {
-    const d = awayDirection(maze, distToExit, cx, cy);
-    if (!d) break;
-    if (d === "n") cy--;
-    else if (d === "s") cy++;
-    else if (d === "e") cx++;
-    else if (d === "w") cx--;
-  }
-  return { x: cx, y: cy };
-}
-
-/* ---------------- Green pill placement (any dead-end) ---------------- */
+/* ---------------- Pills ---------------- */
 function isDeadEnd(cell) {
   let openings = 0;
   if (!cell.n) openings++;
@@ -245,33 +213,28 @@ function isDeadEnd(cell) {
   return openings === 1;
 }
 
-function generatePills(maze, distToExit, maxDist, count) {
+function generatePills(maze, distToExit, count) {
   const all = [];
   for (let y = 1; y < maze.h - 1; y++) {
     for (let x = 1; x < maze.w - 1; x++) {
       const d = distToExit[y][x];
       if (d < 0) continue;
-      // Skip cells too close to the start (start is itself a dead-end).
       if (Math.abs(x - START.x) + Math.abs(y - START.y) < PILL_START_CLEAR) continue;
       all.push({ x, y, d, dead: isDeadEnd(maze.cells[y][x]) });
     }
   }
   if (!all.length) return [];
 
-  // Pool: any dead-end. Fallback (very unlikely with a proper backtracker
-  // maze): the few far cells, so a round never ships with zero pills.
   const deadEnds = all.filter((c) => c.dead);
   const pool = deadEnds.length > 0
     ? deadEnds
     : all.slice().sort((a, b) => b.d - a.d).slice(0, Math.max(count, 8));
 
-  // Shuffle so the same corners don't always get the pills.
   for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = (Math.random() * (i + 1)) | 0;
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  // Pick up to `count`, keeping them spread apart.
   const pills = [];
   for (const c of pool) {
     if (pills.length >= count) break;
@@ -303,7 +266,6 @@ function drawRat(g, cx, cy, r, dir, color) {
   g.fillStyle = color;
   g.beginPath(); g.arc(headX - r * 0.1, -r * 0.62, earR, 0, Math.PI * 2); g.fill();
   g.beginPath(); g.arc(headX - r * 0.1,  r * 0.62, earR, 0, Math.PI * 2); g.fill();
-
   g.beginPath(); g.ellipse(0, 0, bodyRX, bodyRY, 0, 0, Math.PI * 2); g.fill();
   g.beginPath(); g.arc(headX, 0, headR, 0, Math.PI * 2); g.fill();
 
@@ -333,7 +295,7 @@ function drawRat(g, cx, cy, r, dir, color) {
   g.restore();
 }
 
-/* ---------------- Green pill visual ---------------- */
+/* ---------------- Pill visual ---------------- */
 function drawPill(g, cx, cy, s) {
   g.save();
   g.translate(cx, cy);
@@ -383,7 +345,7 @@ function drawPill(g, cx, cy, s) {
   g.restore();
 }
 
-/* ---------------- Cheese visual (the exit) ---------------- */
+/* ---------------- Cheese ---------------- */
 function drawCheese(g, cx, cy, s) {
   g.save();
   g.translate(cx, cy);
@@ -421,16 +383,11 @@ function drawCheese(g, cx, cy, s) {
   g.closePath();
   g.stroke();
 
-  const holes = [
-    [-w * 0.35, h * 0.25, s * 0.13],
-    [ w * 0.30, h * 0.18, s * 0.10],
-    [-w * 0.05, -h * 0.05, s * 0.09],
-    [ w * 0.05, h * 0.42, s * 0.07],
-  ];
   g.fillStyle = "#c99120";
-  for (const [hx, hy, hr] of holes) {
-    g.beginPath(); g.arc(hx, hy, hr, 0, Math.PI * 2); g.fill();
-  }
+  g.beginPath(); g.arc(-w * 0.35, h * 0.25, s * 0.13, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc( w * 0.30, h * 0.18, s * 0.10, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(-w * 0.05, -h * 0.05, s * 0.09, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc( w * 0.05, h * 0.42, s * 0.07, 0, Math.PI * 2); g.fill();
 
   g.fillStyle = "rgba(255,255,255,0.55)";
   g.beginPath();
@@ -450,28 +407,43 @@ function getLayout(n) {
   return [2, 3];
 }
 
-/* ---------------- Entry point ---------------- */
+/* ============================================================
+   Entry point
+   ============================================================ */
 export function start(ctx) {
   const { root, signal } = ctx;
 
-  const style = document.createElement("style");
-  style.textContent = `
-    .ratrace { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #0e1a24; }
-    .ratrace canvas { max-width: 100%; max-height: 100%; display: block; border-radius: 12px; }
-  `;
-  document.head.append(style);
+  // Themed wrapper.
+  root.style.setProperty("background", BG, "important");
+  root.style.setProperty("position", "relative", "important");
+  root.style.setProperty("overflow", "hidden", "important");
+  root.style.setProperty("border", "0", "important");
+  root.style.setProperty("padding", "0", "important");
+  root.style.setProperty("margin", "0", "important");
+
+  const wrap = document.createElement("div");
+  Object.assign(wrap.style, {
+    position: "absolute", inset: "0",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: BG, border: "0", padding: "0", margin: "0",
+    overflow: "hidden",
+  });
 
   const canvas = document.createElement("canvas");
   canvas.width = VIEW_W; canvas.height = VIEW_H;
-  const g = canvas.getContext("2d");
-  const wrap = document.createElement("div");
-  wrap.className = "ratrace";
+  Object.assign(canvas.style, {
+    display: "block", maxWidth: "100%", maxHeight: "100%",
+    aspectRatio: "16 / 9", background: BG,
+    border: "0", padding: "0", margin: "0",
+  });
   wrap.append(canvas);
   root.replaceChildren(wrap);
+  const g = canvas.getContext("2d");
 
+  /* ---------------- Runtime state ---------------- */
   const players = new Map();
-  const inputs = new Map();   // slot -> { x, y }   from the joystick
-  const dpad = new Map();     // slot -> { up, down, left, right }  from buttons
+  const inputs = new Map();
+  const dpad = new Map();
 
   let maze = null;
   let exit = { x: 1, y: 1 };
@@ -490,6 +462,19 @@ export function start(ctx) {
 
   let raf = 0;
   let last = performance.now();
+  let exiting = false;
+
+  // Cached, sorted player list. Invalidated on join/leave.
+  let playerOrder = [];
+  let playerOrderDirty = true;
+  const markPlayerOrderDirty = () => { playerOrderDirty = true; };
+  function getOrderedPlayers() {
+    if (playerOrderDirty) {
+      playerOrder = [...players.values()].sort((a, b) => a.slot - b.slot);
+      playerOrderDirty = false;
+    }
+    return playerOrder;
+  }
 
   function makePlayer(slot) {
     return {
@@ -508,6 +493,9 @@ export function start(ctx) {
       compassUntil: -Infinity,
       pickupFlash: -Infinity,
       noPickupUntil: -Infinity,
+      frozenUntil: -Infinity,
+      // Visibility cache: recomputed only when cellX / cellY changes.
+      visCx: -1, visCy: -1, visMap: null,
     };
   }
 
@@ -525,6 +513,17 @@ export function start(ctx) {
     p.compassUntil = -Infinity;
     p.pickupFlash = -Infinity;
     p.noPickupUntil = -Infinity;
+    p.frozenUntil = -Infinity;
+    p.visCx = -1; p.visCy = -1; p.visMap = null;
+  }
+
+  function getVisibility(p) {
+    if (p.visCx === p.cellX && p.visCy === p.cellY && p.visMap) return p.visMap;
+    const m = visibleCells(maze, p.cellX, p.cellY, VIS_DEPTH);
+    p.visCx = p.cellX;
+    p.visCy = p.cellY;
+    p.visMap = m;
+    return m;
   }
 
   function newRound() {
@@ -534,21 +533,15 @@ export function start(ctx) {
     exit = { x: START.x, y: START.y };
     for (let y = 1; y < maze.h - 1; y++) {
       for (let x = 1; x < maze.w - 1; x++) {
-        if (fromStart[y][x] > best) {
-          best = fromStart[y][x];
-          exit = { x, y };
-        }
+        if (fromStart[y][x] > best) { best = fromStart[y][x]; exit = { x, y }; }
       }
     }
     distToExit = bfsDistances(maze, exit);
     maxDist = Math.max(1, best);
 
-    pills = generatePills(maze, distToExit, maxDist, PILL_COUNT);
+    pills = generatePills(maze, distToExit, PILL_COUNT);
 
-    for (const p of players.values()) {
-      resetPlayer(p);
-      p.active = true;
-    }
+    for (const p of players.values()) { resetPlayer(p); p.active = true; }
     inputs.clear();
     dpad.clear();
     countdown = COUNTDOWN_TIME;
@@ -567,6 +560,7 @@ export function start(ctx) {
     pl.active = true;
     players.set(p.slot, pl);
   });
+  markPlayerOrderDirty();
 
   const on = (t, type, fn) => t.addEventListener(type, fn, { signal });
 
@@ -582,12 +576,14 @@ export function start(ctx) {
       pl.active = true;
     }
     players.set(e.detail.slot, pl);
+    markPlayerOrderDirty();
   });
 
   on(window, "player-leave", (e) => {
     players.delete(e.detail.slot);
     inputs.delete(e.detail.slot);
     dpad.delete(e.detail.slot);
+    markPlayerOrderDirty();
   });
 
   on(window, "controller-input", (e) => {
@@ -600,12 +596,10 @@ export function start(ctx) {
     }
 
     if (data.type === "button") {
-      // Any press during the ready phase readies the player.
       if (phase === "ready" && data.pressed) {
         const p = players.get(slot);
         if (p) p.ready = true;
       }
-      // Track held direction buttons for movement.
       const dirKey = BUTTON_DIR[data.id];
       if (dirKey) {
         let d = dpad.get(slot);
@@ -616,11 +610,8 @@ export function start(ctx) {
   });
 
   function readInput(p) {
-    // Joystick wins if it is being pushed past the dead zone.
     const stick = inputs.get(p.slot);
-    if (stick && Math.hypot(stick.x, stick.y) >= 0.4) {
-      return { x: stick.x, y: stick.y };
-    }
+    if (stick && Math.hypot(stick.x, stick.y) >= 0.4) return { x: stick.x, y: stick.y };
     const d = dpad.get(p.slot);
     if (d) {
       const x = (d.right ? 1 : 0) - (d.left ? 1 : 0);
@@ -632,100 +623,75 @@ export function start(ctx) {
 
   function tryMove(p) {
     if (p.finished || p.dnf) return;
+    if (elapsed < p.frozenUntil) return;
     const input = readInput(p);
     if (!input) return;
     const { x, y } = input;
 
-    let dir;
-    if (Math.abs(x) >= Math.abs(y)) dir = x > 0 ? "e" : "w";
-    else                            dir = y > 0 ? "s" : "n";
-
+    const dir = Math.abs(x) >= Math.abs(y) ? (x > 0 ? "e" : "w") : (y > 0 ? "s" : "n");
     p.dir = dir;
     const cell = maze.cells[p.cellY][p.cellX];
     if (cell[dir]) return;
 
-    const nx = p.cellX + (dir === "e" ? 1 : dir === "w" ? -1 : 0);
-    const ny = p.cellY + (dir === "s" ? 1 : dir === "n" ? -1 : 0);
-
     p.prevX = p.cellX; p.prevY = p.cellY;
-    p.cellX = nx; p.cellY = ny;
+    p.cellX += dir === "e" ? 1 : dir === "w" ? -1 : 0;
+    p.cellY += dir === "s" ? 1 : dir === "n" ? -1 : 0;
     p.t = 0;
   }
 
   function movePlayer(p, dt) {
-    if (p.t < 1) {
-      p.t = Math.min(1, p.t + dt * MOVE_SPEED);
-      return;
-    }
+    if (p.t < 1) { p.t = Math.min(1, p.t + dt * MOVE_SPEED); return; }
     if (p.active) tryMove(p);
   }
 
-  // ---- Pill pickup (global shockwave trap) ----
   function checkPillPickup(p) {
     if (!p.active || p.finished || p.dnf) return;
     if (elapsed < p.noPickupUntil) return;
+    if (elapsed < p.frozenUntil) return;
     const idx = pills.findIndex((pl) => pl.x === p.cellX && pl.y === p.cellY);
     if (idx === -1) return;
 
     pills.splice(idx, 1);
+    let anyFrozen = false;
 
-    // Global shockwave: every active player gets flung backward by THEIR OWN
-    // bucket. FREEZING = 0, so the freezing picker is spared and everyone
-    // else eats the hit.
-    let anyMoved = false;
     for (const q of players.values()) {
+      if (q === p) continue;
       if (!q.active || q.finished || q.dnf) continue;
       const d = distToExit[q.cellY]?.[q.cellX] ?? -1;
       if (d < 0) continue;
-      const bucket = tempBucket(d / maxDist);
-      const steps = TELEPORT[bucket] ?? 0;
-      if (steps <= 0) continue;
-
-      const dest = teleportAwayFromExit(maze, distToExit, q.cellX, q.cellY, steps);
-      q.prevX = q.cellX = dest.x;
-      q.prevY = q.cellY = dest.y;
-      q.t = 1;
-      q.noPickupUntil = elapsed + 0.2;
+      const secs = FREEZE[tempBucket(d / maxDist)] ?? 0;
+      if (secs <= 0) continue;
+      const base = Math.max(elapsed, q.frozenUntil);
+      q.frozenUntil = base + secs;
       q.pickupFlash = elapsed + 0.6;
       ctx.send(q.slot, { type: "vibrate", ms: [80, 40, 80, 40, 80] });
-      anyMoved = true;
+      anyFrozen = true;
     }
 
-    // The picker always gets feedback, even when their own pushback was 0.
     if (elapsed >= p.pickupFlash) {
       p.pickupFlash = elapsed + 0.6;
       p.noPickupUntil = elapsed + 0.2;
       ctx.send(p.slot, { type: "vibrate", ms: [80, 40, 80, 40, 80] });
     }
 
-    if (anyMoved) shockwaveUntil = elapsed + 0.7;
-
-    // Safety: nobody can be pushed ONTO the cheese, but check just in case.
-    for (const q of players.values()) {
-      if (!q.active || q.finished || q.dnf) continue;
-      if (q.cellX === exit.x && q.cellY === exit.y) {
-        q.finished = true;
-        q.place = finishers.length + 1;
-        q.finishTime = elapsed - raceStartElapsed;
-        finishers.push(q.slot);
-        if (raceEndElapsed === null) raceEndElapsed = elapsed + DNF_WAIT;
-        ctx.send(q.slot, { type: "vibrate", ms: [120, 60, 180] });
-      }
-    }
+    if (anyFrozen) shockwaveUntil = elapsed + 0.7;
   }
 
-  // Phone HUD text. No temperature words here.
   function hintFor(p) {
     if (phase === "countdown") return "Get ready";
     if (phase === "ready") {
-      const readyCount = [...players.values()].filter((x) => x.ready).length;
       if (p.finished) return `${ordinal(p.place)} place - press any button`;
       if (p.dnf)      return "DNF - press any button";
+      const readyCount = [...players.values()].filter((x) => x.ready).length;
       return `Press any button (${readyCount}/${players.size})`;
     }
     if (!p.active) return "Waiting for next round";
     if (p.finished) return `${ordinal(p.place)} place - ${p.finishTime.toFixed(2)}s`;
     if (p.dnf)      return "DNF";
+    if (elapsed < p.frozenUntil) {
+      const remain = Math.max(0, p.frozenUntil - elapsed);
+      return `FROZEN ${remain.toFixed(1)}s`;
+    }
     return "";
   }
 
@@ -756,7 +722,6 @@ export function start(ctx) {
     if (phase === "race") {
       for (const p of players.values()) if (p.active && !p.finished && !p.dnf) movePlayer(p, dt);
 
-      // Compass pulse for FREEZING players
       if (elapsed >= nextCompassAt) {
         for (const p of players.values()) {
           if (!p.active || p.finished || p.dnf) continue;
@@ -770,10 +735,8 @@ export function start(ctx) {
         nextCompassAt += COMPASS_PERIOD;
       }
 
-      // Pill pickups
       for (const p of players.values()) checkPillPickup(p);
 
-      // Exit detection (cheese)
       for (const p of players.values()) {
         if (!p.active || p.finished || p.dnf) continue;
         if (p.cellX === exit.x && p.cellY === exit.y) {
@@ -812,27 +775,27 @@ export function start(ctx) {
       for (const p of players.values()) if (!p.ready) { allReady = false; break; }
       if (allReady) { newRound(); updateHud(true); }
       else updateHud();
-      return;
     }
   }
 
   /* ---------------- Cards ---------------- */
   function drawWinnerCard(vp, p) {
     const info = ctx.player(p.slot);
-    const color = info ? info.color : "#3b8bff";
+    const color = info ? info.color : BLUE;
     const name = info ? info.name : "Player";
     const cx = vp.x + vp.w / 2;
     const cy = vp.y + vp.h / 2;
 
     g.save();
     g.beginPath(); g.rect(vp.x, vp.y, vp.w, vp.h); g.clip();
-    g.fillStyle = "#0a1420";
+    g.fillStyle = CARD;
     g.fillRect(vp.x, vp.y, vp.w, vp.h);
 
+    const rgb = hexToRgb(color);
     const rg = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(vp.w, vp.h) * 0.7);
-    rg.addColorStop(0, rgbaStr(hexToRgb(color), 0.55));
-    rg.addColorStop(0.6, rgbaStr(hexToRgb(color), 0.15));
-    rg.addColorStop(1, rgbaStr(hexToRgb(color), 0));
+    rg.addColorStop(0, rgbaStr(rgb, 0.55));
+    rg.addColorStop(0.6, rgbaStr(rgb, 0.15));
+    rg.addColorStop(1, rgbaStr(rgb, 0));
     g.fillStyle = rg;
     g.fillRect(vp.x, vp.y, vp.w, vp.h);
 
@@ -845,7 +808,7 @@ export function start(ctx) {
     const fs1 = Math.min(vp.w * 0.16, vp.h * 0.22);
     g.textAlign = "center"; g.textBaseline = "middle";
     g.font = `800 ${fs1}px Fredoka, system-ui, sans-serif`;
-    g.fillStyle = "#e6f4fb";
+    g.fillStyle = INK;
     g.fillText(ordinal(p.place).toUpperCase(), cx, cy + vp.h * 0.14);
 
     const fs2 = Math.min(vp.w * 0.09, vp.h * 0.09);
@@ -855,10 +818,10 @@ export function start(ctx) {
 
     const fs3 = Math.min(vp.w * 0.055, vp.h * 0.055);
     g.font = `600 ${fs3}px Fredoka, system-ui, sans-serif`;
-    g.fillStyle = "#c9d6e0";
+    g.fillStyle = MUTED;
     g.fillText(`${p.finishTime.toFixed(2)} s`, cx, cy + vp.h * 0.36);
 
-    g.strokeStyle = rgbaStr(hexToRgb(color), 0.85);
+    g.strokeStyle = rgbaStr(rgb, 0.85);
     g.lineWidth = 4;
     g.strokeRect(vp.x + 3, vp.y + 3, vp.w - 6, vp.h - 6);
     g.restore();
@@ -867,13 +830,13 @@ export function start(ctx) {
   function drawDnfCard(vp, p) {
     const info = ctx.player(p.slot);
     const name = info ? info.name : "Player";
-    const color = info ? info.color : "#5a7a95";
+    const color = info ? info.color : MUTED;
     const cx = vp.x + vp.w / 2;
     const cy = vp.y + vp.h / 2;
 
     g.save();
     g.beginPath(); g.rect(vp.x, vp.y, vp.w, vp.h); g.clip();
-    g.fillStyle = "#0a1420";
+    g.fillStyle = CARD;
     g.fillRect(vp.x, vp.y, vp.w, vp.h);
 
     const fs1 = Math.min(vp.w * 0.22, vp.h * 0.28);
@@ -889,7 +852,7 @@ export function start(ctx) {
 
     const fs3 = Math.min(vp.w * 0.045, vp.h * 0.045);
     g.font = `600 ${fs3}px Fredoka, system-ui, sans-serif`;
-    g.fillStyle = "#5a7a95";
+    g.fillStyle = MUTED;
     g.fillText("Did not finish", cx, cy + vp.h * 0.30);
 
     g.strokeStyle = "rgba(229,72,77,0.6)";
@@ -905,7 +868,7 @@ export function start(ctx) {
 
     g.save();
     g.beginPath(); g.rect(vp.x, vp.y, vp.w, vp.h); g.clip();
-    g.fillStyle = "#080e16";
+    g.fillStyle = FOG;
     g.fillRect(vp.x, vp.y, vp.w, vp.h);
 
     const cellPx = Math.min(vp.w / 11, vp.h / 9);
@@ -915,88 +878,101 @@ export function start(ctx) {
     const cellsDown = vp.h / cellPx;
     const wx0 = px - cellsAcross / 2;
     const wy0 = py - cellsDown / 2;
-
     const w2sX = (wx) => vp.x + (wx - wx0) * cellPx;
     const w2sY = (wy) => vp.y + (wy - wy0) * cellPx;
 
-    const vis = visibleCells(maze, p.cellX, p.cellY, VIS_DEPTH);
-    const exitK = exit.x * 1000 + exit.y;
+    const visMap = getVisibility(p);
+    const wallW = Math.max(3, cellPx * 0.09);
 
-    // Floors
-    for (const k of vis.set) {
-      const x = Math.floor(k / 1000);
-      const y = k % 1000;
-      const d = vis.map.get(k);
+    // ---- Floors, walls and wall highlights in one pass ----
+    // A wall shared by two visible cells is only drawn by the cell that
+    // owns its "s" or "e" side, so no wall is drawn twice.
+    for (const [k, d] of visMap) {
+      const x = (k / 1000) | 0;
+      const y = k - x * 1000;
+      const cell = maze.cells[y][x];
       const sx = w2sX(x), sy = w2sY(y);
       if (sx + cellPx < vp.x || sx > vp.x + vp.w) continue;
       if (sy + cellPx < vp.y || sy > vp.y + vp.h) continue;
+
       const a = Math.max(0.35, 1 - (d / VIS_DEPTH) * 0.65);
-      g.fillStyle = `rgba(230,244,251,${a})`;
+
+      // Floor
+      g.fillStyle = rgbaStr(FLOOR_RGB, a);
       g.fillRect(sx, sy, cellPx, cellPx);
+
+      // Wall fill + top highlight
+      g.fillStyle = rgbaStr(WALL_RGB, a);
+      const wallHi = rgbaStr(WALL_HI_RGB, a * 0.7);
+      if (cell.n && !visMap.has(k - 1000)) {
+        g.fillRect(sx, sy, cellPx, wallW);
+        g.fillStyle = wallHi;
+        g.fillRect(sx, sy + wallW - 2, cellPx, 2);
+        g.fillStyle = rgbaStr(WALL_RGB, a);
+      }
+      if (cell.s) {
+        g.fillRect(sx, sy + cellPx - wallW, cellPx, wallW);
+        g.fillStyle = wallHi;
+        g.fillRect(sx, sy + cellPx - wallW, cellPx, 2);
+        g.fillStyle = rgbaStr(WALL_RGB, a);
+      }
+      if (cell.w && !visMap.has(k - 1)) {
+        g.fillRect(sx, sy, wallW, cellPx);
+        g.fillStyle = wallHi;
+        g.fillRect(sx + wallW - 2, sy, 2, cellPx);
+        g.fillStyle = rgbaStr(WALL_RGB, a);
+      }
+      if (cell.e) {
+        g.fillRect(sx + cellPx - wallW, sy, wallW, cellPx);
+        g.fillStyle = wallHi;
+        g.fillRect(sx + cellPx - wallW, sy, 2, cellPx);
+        g.fillStyle = rgbaStr(WALL_RGB, a);
+      }
     }
 
-    // Walls
-    const wallW = Math.max(3, cellPx * 0.09);
-    for (const k of vis.set) {
-      const x = Math.floor(k / 1000);
-      const y = k % 1000;
-      const cell = maze.cells[y][x];
-      const d = vis.map.get(k);
-      const a = Math.max(0.4, 1 - (d / VIS_DEPTH) * 0.55);
-      const sx = w2sX(x), sy = w2sY(y);
-
-      g.fillStyle = `rgba(43,61,79,${a})`;
-      if (cell.n) g.fillRect(sx, sy, cellPx, wallW);
-      if (cell.s) g.fillRect(sx, sy + cellPx - wallW, cellPx, wallW);
-      if (cell.w) g.fillRect(sx, sy, wallW, cellPx);
-      if (cell.e) g.fillRect(sx + cellPx - wallW, sy, wallW, cellPx);
-
-      g.fillStyle = `rgba(90,122,149,${a})`;
-      if (cell.n) g.fillRect(sx, sy + wallW - 2, cellPx, 2);
-      if (cell.s) g.fillRect(sx, sy + cellPx - wallW, cellPx, 2);
-      if (cell.w) g.fillRect(sx + wallW - 2, sy, 2, cellPx);
-      if (cell.e) g.fillRect(sx + cellPx - wallW, sy, 2, cellPx);
-    }
-
-    // Green pills
-    for (const pill of pills) {
-      const k = pill.x * 1000 + pill.y;
-      if (!vis.set.has(k)) continue;
-      const pd = vis.map.get(k);
-      const a = Math.max(0.5, 1 - (pd / VIS_DEPTH) * 0.5);
-      const cx = w2sX(pill.x) + cellPx / 2;
-      const cy = w2sY(pill.y) + cellPx / 2;
+    // ---- Pills ----
+    for (let i = 0; i < pills.length; i++) {
+      const pill = pills[i];
+      const d = visMap.get(pill.x * 1000 + pill.y);
+      if (d === undefined) continue;
+      const a = Math.max(0.5, 1 - (d / VIS_DEPTH) * 0.5);
       g.globalAlpha = a;
-      drawPill(g, cx, cy, cellPx * 0.42);
+      drawPill(g, w2sX(pill.x) + cellPx / 2, w2sY(pill.y) + cellPx / 2, cellPx * 0.42);
       g.globalAlpha = 1;
     }
 
-    // Cheese (the exit)
-    if (vis.set.has(exitK)) {
-      const d = vis.map.get(exitK);
-      const a = Math.max(0.55, 1 - (d / VIS_DEPTH) * 0.5);
-      const ex = w2sX(exit.x) + cellPx / 2;
-      const ey = w2sY(exit.y) + cellPx / 2;
+    // ---- Cheese ----
+    const exitD = visMap.get(exit.x * 1000 + exit.y);
+    if (exitD !== undefined) {
+      const a = Math.max(0.55, 1 - (exitD / VIS_DEPTH) * 0.5);
       g.globalAlpha = a;
-      drawCheese(g, ex, ey, cellPx * 0.34);
+      drawCheese(g, w2sX(exit.x) + cellPx / 2, w2sY(exit.y) + cellPx / 2, cellPx * 0.34);
       g.globalAlpha = 1;
     }
 
-    // Other rats are GREEN
+    // ---- Other rats ----
     for (const op of players.values()) {
-      if (op.slot === p.slot) continue;
-      if (op.finished || op.dnf) continue;
-      if (!vis.set.has(op.cellX * 1000 + op.cellY)) continue;
+      if (op.slot === p.slot || op.finished || op.dnf) continue;
+      if (!visMap.has(op.cellX * 1000 + op.cellY)) continue;
       const ox = lerp(op.prevX, op.cellX, op.t);
       const oy = lerp(op.prevY, op.cellY, op.t);
-      drawRat(g, w2sX(ox) + cellPx / 2, w2sY(oy) + cellPx / 2,
-              cellPx * 0.30, op.dir, OTHER_RAT_COLOR);
+      const oxp = w2sX(ox) + cellPx / 2;
+      const oyp = w2sY(oy) + cellPx / 2;
+      const orr = cellPx * 0.30;
+
+      drawRat(g, oxp, oyp, orr, op.dir, OTHER_RAT_COLOR);
+      if (elapsed < op.frozenUntil) {
+        g.strokeStyle = "rgba(159,209,255,0.95)";
+        g.lineWidth = 3;
+        g.beginPath(); g.arc(oxp, oyp, orr * 1.7, 0, Math.PI * 2); g.stroke();
+      }
     }
 
-    // Own rat — body colour = temperature
+    // ---- Own rat ----
     const ownDist = distToExit[p.cellY]?.[p.cellX] ?? -1;
     const ownTempRGB = ownDist >= 0 ? tempRGB(ownDist / maxDist) : [136, 136, 136];
     const ownColor = rgbStr(ownTempRGB);
+    const ownFrozen = elapsed < p.frozenUntil;
 
     {
       const bxs = w2sX(px) + cellPx / 2;
@@ -1004,7 +980,7 @@ export function start(ctx) {
       const br = cellPx * 0.32;
 
       const glow = g.createRadialGradient(bxs, bys, 0, bxs, bys, br * 2.4);
-      glow.addColorStop(0, rgbaStr(ownTempRGB, 0.55));
+      glow.addColorStop(0, rgbaStr(ownTempRGB, ownFrozen ? 0.25 : 0.55));
       glow.addColorStop(1, rgbaStr(ownTempRGB, 0));
       g.fillStyle = glow;
       g.beginPath(); g.arc(bxs, bys, br * 2.4, 0, Math.PI * 2); g.fill();
@@ -1013,15 +989,35 @@ export function start(ctx) {
         const life = (p.pickupFlash - elapsed) / 0.6;
         g.strokeStyle = `rgba(229,72,77,${life})`;
         g.lineWidth = 4;
-        g.beginPath();
-        g.arc(bxs, bys, br + (1 - life) * br * 2.5, 0, Math.PI * 2);
-        g.stroke();
+        g.beginPath(); g.arc(bxs, bys, br + (1 - life) * br * 2.5, 0, Math.PI * 2); g.stroke();
       }
 
       drawRat(g, bxs, bys, br, p.dir, ownColor);
+
+      if (ownFrozen) {
+        const remain = p.frozenUntil - elapsed;
+        const wob = 1 + Math.sin(elapsed * 12) * 0.04;
+        g.save();
+        g.globalAlpha = 0.55;
+        g.fillStyle = "#bfe3ff";
+        g.beginPath(); g.arc(bxs, bys, br * 1.25, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1;
+        g.strokeStyle = "rgba(159,209,255,0.95)";
+        g.lineWidth = 4;
+        g.beginPath(); g.arc(bxs, bys, br * 1.9 * wob, 0, Math.PI * 2); g.stroke();
+
+        g.font = `800 ${Math.max(12, br * 0.75)}px Fredoka, system-ui, sans-serif`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillStyle = CARD;
+        g.fillText(remain.toFixed(1), bxs, bys + 0.5);
+        g.fillStyle = INK;
+        g.fillText(remain.toFixed(1), bxs, bys);
+        g.restore();
+      }
     }
 
-    // Global shockwave pulse
+    // ---- Shockwave pulse ----
     if (elapsed < shockwaveUntil) {
       const life = (shockwaveUntil - elapsed) / 0.7;
       const pulse = Math.min(1, life * 1.4);
@@ -1030,29 +1026,30 @@ export function start(ctx) {
         vcx0, vcy0, Math.min(vp.w, vp.h) * 0.15,
         vcx0, vcy0, Math.max(vp.w, vp.h) * 0.75,
       );
-      sg.addColorStop(0,   "rgba(229,72,77,0)");
-      sg.addColorStop(0.6, `rgba(229,72,77,${0.18 * pulse})`);
-      sg.addColorStop(1,   `rgba(229,72,77,${0.55 * pulse})`);
+      sg.addColorStop(0,   "rgba(159,209,255,0)");
+      sg.addColorStop(0.6, `rgba(159,209,255,${0.20 * pulse})`);
+      sg.addColorStop(1,   `rgba(159,209,255,${0.55 * pulse})`);
       g.fillStyle = sg;
       g.fillRect(vp.x, vp.y, vp.w, vp.h);
     }
 
-    // Vignette
+    // ---- Vignette ----
     const vcx = vp.x + vp.w / 2, vcy = vp.y + vp.h / 2;
     const vg = g.createRadialGradient(
       vcx, vcy, Math.min(vp.w, vp.h) * 0.25,
       vcx, vcy, Math.max(vp.w, vp.h) * 0.7,
     );
-    vg.addColorStop(0, "rgba(8,14,22,0)");
-    vg.addColorStop(1, "rgba(8,14,22,0.55)");
+    vg.addColorStop(0, "rgba(8,12,26,0)");
+    vg.addColorStop(1, "rgba(8,12,26,0.55)");
     g.fillStyle = vg;
     g.fillRect(vp.x, vp.y, vp.w, vp.h);
 
-    g.strokeStyle = "rgba(90,122,149,0.5)";
+    // Frame
+    g.strokeStyle = CARD_EDGE;
     g.lineWidth = 2;
     g.strokeRect(vp.x + 1, vp.y + 1, vp.w - 2, vp.h - 2);
 
-    // Name pill
+    // Player name chip
     const info = ctx.player(p.slot);
     if (info) {
       const fs = Math.max(13, vp.h * 0.032);
@@ -1061,7 +1058,7 @@ export function start(ctx) {
       const tw = g.measureText(info.name).width + 20;
       const lx = vp.x + 10, ly = vp.y + 8;
       const lh = fs + 10, rad = lh / 2;
-      g.fillStyle = "rgba(8,14,22,0.6)";
+      g.fillStyle = "rgba(8,12,26,0.7)";
       g.beginPath();
       g.moveTo(lx + rad, ly);
       g.arcTo(lx + tw, ly, lx + tw, ly + lh, rad);
@@ -1073,7 +1070,7 @@ export function start(ctx) {
       g.fillText(info.name, lx + 10, ly + 5);
     }
 
-    // 1-second compass pulse
+    // Compass
     if (phase === "race" && p.active && !p.finished && !p.dnf && elapsed < p.compassUntil) {
       const dir = exitDirection(maze, distToExit, p.cellX, p.cellY);
       if (dir) {
@@ -1087,7 +1084,7 @@ export function start(ctx) {
         g.save();
         g.translate(cx2, cy2);
         g.scale(pulse, pulse);
-        g.fillStyle = "rgba(8,14,22,0.88)";
+        g.fillStyle = "rgba(8,12,26,0.88)";
         g.beginPath(); g.arc(0, 0, size, 0, Math.PI * 2); g.fill();
         g.strokeStyle = "rgba(255,220,120,0.95)";
         g.lineWidth = 3;
@@ -1104,10 +1101,11 @@ export function start(ctx) {
       }
     }
 
+    // Waiting overlay for late-joiners
     if (!p.active && phase === "race") {
-      g.fillStyle = "rgba(8,14,22,0.7)";
+      g.fillStyle = "rgba(8,12,26,0.75)";
       g.fillRect(vp.x, vp.y, vp.w, vp.h);
-      g.fillStyle = "#e6f4fb";
+      g.fillStyle = INK;
       g.font = `700 ${Math.max(14, vp.h * 0.05)}px Fredoka, system-ui, sans-serif`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText("Waiting for next round", vp.x + vp.w / 2, vp.y + vp.h / 2);
@@ -1119,11 +1117,11 @@ export function start(ctx) {
   /* ---------------- Overlay ---------------- */
   function renderOverlay() {
     if (phase === "countdown") {
-      g.fillStyle = "rgba(8,14,22,0.6)";
+      g.fillStyle = "rgba(30,34,70,0.78)";
       g.fillRect(0, 0, VIEW_W, VIEW_H);
       g.textAlign = "center"; g.textBaseline = "middle";
       g.font = "800 200px Fredoka, system-ui, sans-serif";
-      g.fillStyle = "#e6f4fb";
+      g.fillStyle = INK;
       const n = Math.ceil(countdown);
       g.fillText(n > 0 ? String(n) : "GO", VIEW_W / 2, VIEW_H / 2);
       return;
@@ -1134,7 +1132,7 @@ export function start(ctx) {
       const bw = 360, bh = 54;
       const bx = (VIEW_W - bw) / 2, by = 14;
       const rad = bh / 2;
-      g.fillStyle = "rgba(8,14,22,0.82)";
+      g.fillStyle = "rgba(26,30,61,0.92)";
       g.beginPath();
       g.moveTo(bx + rad, by);
       g.arcTo(bx + bw, by, bx + bw, by + bh, rad);
@@ -1142,10 +1140,10 @@ export function start(ctx) {
       g.arcTo(bx, by + bh, bx, by, rad);
       g.arcTo(bx, by, bx + bw, by, rad);
       g.fill();
-      g.strokeStyle = "rgba(90,122,149,0.5)";
+      g.strokeStyle = CARD_EDGE;
       g.lineWidth = 2; g.stroke();
 
-      g.fillStyle = "#e6f4fb";
+      g.fillStyle = INK;
       g.font = "700 24px Fredoka, system-ui, sans-serif";
       g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText(`Race ends in ${Math.ceil(remaining)}s`, VIEW_W / 2, by + bh / 2);
@@ -1153,24 +1151,24 @@ export function start(ctx) {
     }
 
     if (phase === "ready") {
-      g.fillStyle = "rgba(8,14,22,0.62)";
+      g.fillStyle = "rgba(30,34,70,0.72)";
       g.fillRect(0, 0, VIEW_W, VIEW_H);
       g.textAlign = "center"; g.textBaseline = "middle";
 
       if (finishers.length > 0) {
         const info = ctx.player(finishers[0]);
         g.font = "800 100px Fredoka, system-ui, sans-serif";
-        g.fillStyle = info ? info.color : "#e6f4fb";
+        g.fillStyle = info ? info.color : INK;
         g.fillText(`${info ? info.name : "Player"} wins!`, VIEW_W / 2, VIEW_H / 2 - 60);
       } else {
         g.font = "800 90px Fredoka, system-ui, sans-serif";
-        g.fillStyle = "#e6f4fb";
+        g.fillStyle = INK;
         g.fillText("Round over", VIEW_W / 2, VIEW_H / 2 - 60);
       }
 
       const readyCount = [...players.values()].filter((p) => p.ready).length;
       g.font = "600 30px Fredoka, system-ui, sans-serif";
-      g.fillStyle = "#c9d6e0";
+      g.fillStyle = MUTED;
       g.fillText(`Press any button to continue (${readyCount}/${players.size})`,
                  VIEW_W / 2, VIEW_H / 2 + 40);
 
@@ -1179,7 +1177,7 @@ export function start(ctx) {
       let x = VIEW_W / 2 - totalW / 2;
       for (const p of players.values()) {
         const info = ctx.player(p.slot);
-        g.fillStyle = p.ready ? (info ? info.color : "#5a7a95") : "rgba(90,122,149,0.35)";
+        g.fillStyle = p.ready ? (info ? info.color : MUTED) : "rgba(90,97,136,0.35)";
         g.beginPath(); g.arc(x, VIEW_H / 2 + 110, dotR, 0, Math.PI * 2); g.fill();
         x += gap;
       }
@@ -1187,20 +1185,21 @@ export function start(ctx) {
   }
 
   function render() {
-    g.fillStyle = "#0e1a24";
+    g.fillStyle = BG;
     g.fillRect(0, 0, VIEW_W, VIEW_H);
 
-    const list = [...players.values()].sort((a, b) => a.slot - b.slot);
+    const list = getOrderedPlayers();
     const n = Math.max(1, list.length);
     const [rows, cols] = getLayout(n);
     const cellW = VIEW_W / cols;
     const cellH = VIEW_H / rows;
 
-    list.forEach((p, i) => {
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
       const col = i % cols;
-      const row = Math.floor(i / cols);
+      const row = (i / cols) | 0;
       renderViewport({ x: col * cellW, y: row * cellH, w: cellW, h: cellH }, p);
-    });
+    }
 
     renderOverlay();
   }
@@ -1218,9 +1217,9 @@ export function start(ctx) {
 
   return {
     destroy() {
+      exiting = true;
       cancelAnimationFrame(raf);
       raf = 0;
-      style.remove();
     },
   };
 }

@@ -18,6 +18,7 @@ import coop from "./coop.js";
 import ctf from "./ctf.js";
 import turner from "./turner.js";
 import stopper from "./stopper.js";
+import echo from "./echo.js";
 import spinner from "./spinner.js";
 
 const PADS = {
@@ -30,6 +31,7 @@ const PADS = {
   [ctf.id]: ctf,              // capture the flag: basic pad for team select, twin sticks + fire in play
   [turner.id]: turner,        // loop rider: two tap buttons for LEFT / RIGHT steering
   [stopper.id]: stopper,   // stop clock: one big tap button
+  [echo.id]: echo,
   [spinner.id]: spinner,
 };
 

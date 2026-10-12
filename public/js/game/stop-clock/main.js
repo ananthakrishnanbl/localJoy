@@ -5,8 +5,20 @@
 //
 // Round score = 500 - |t*100 - 1000|, in [0, 500]. Highest total over
 // three rounds wins. Plays 1-10 players.
+//
+// Rendering notes
+//   * The loop ticks every animation frame (cheap), but the canvas is only
+//     repainted when something visible changed (`dirty`), plus a slow
+//     heartbeat so name / colour changes still show up.
+//   * The expensive static art (cells, name cards, clock faces and their
+//     drop shadows) is painted once into an off-screen layer and blitted.
+//     Only digits, iris and status text are drawn live.
+//   * Tap timestamps are taken inside the input handler, never in the
+//     render loop, so drawing cost can never change a player's time.
 
 const TAU = Math.PI * 2;
+const W = 1280;
+const H = 720;
 const HEADER_H = 44;
 
 const COUNTDOWN       = 3.5;
@@ -14,16 +26,18 @@ const CLOSE_START     = 1.0;
 const CLOSE_DURATION  = 1.4;
 const REVEAL_DURATION = 3.0;    // seconds the frozen clocks stay visible
 const REVEAL_ANIM     = 0.6;    // portion of that used to open the irises
+const TOTALS_DELAY    = 3.0;    // seconds the final results stay up before totals
 const TARGET          = 10.0;
 const MAX_TIME        = 20.0;
 const TOTAL_ROUNDS    = 3;
+const HIDE_BELOW      = 0.08;   // iris opening below which the digits are hidden
+const HEARTBEAT_MS    = 250;    // longest gap between repaints
 
 // -------- Palette matched to the localJoy site --------
 const BG          = "#1e2246";
 const BG_CELL     = "#232850";
 const BG_HEADER   = "#1a1e3d";
 const CARD        = "#ffffff";
-const CARD_EDGE   = "rgba(255,255,255,0.10)";
 const CARD_SHADOW = "rgba(0,0,0,0.45)";
 const INK         = "#1a1f3d";
 const INK_LIGHT   = "#ffffff";
@@ -39,17 +53,104 @@ const GOLD        = "#ffb400";
 const PILL_BG     = "rgba(91,141,239,0.16)";
 const PILL_TEXT   = "#8ab4f8";
 
+// -------- Fonts (built once instead of every frame) --------
+const UI   = "Fredoka, system-ui, sans-serif";
+const MONO = '"SF Mono", Menlo, Consolas, monospace';
+const F = {
+  brand:     `800 16px ${UI}`,
+  pill:      `700 13px ${UI}`,
+  rule:      `600 13px ${UI}`,
+  countBig:  `900 150px ${UI}`,
+  countHint: `700 22px ${UI}`,
+  countSub:  `500 16px ${UI}`,
+  title:     `800 34px ${UI}`,
+  hint:      `600 14px ${UI}`,
+  colHead:   `700 12px ${UI}`,
+  rank:      `800 18px ${UI}`,
+  name:      `700 18px ${UI}`,
+  footer:    `500 13px ${UI}`,
+  tick:      `800 18px ${UI}`,
+  lbTime:    `600 18px ${MONO}`,
+  lbRound:   `800 20px ${UI}`,
+  lbTotal:   `700 16px ${UI}`,
+  totRound:  `600 16px ${MONO}`,
+  totTotal:  `800 22px ${UI}`,
+};
+
+/* ----------------------- pure helpers (no state) ----------------------- */
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
+
+// Round score: 500 for a perfect 10.00, minus 1 per hundredth of error.
+const scoreFor = (t) => Math.max(0, 500 - Math.round(Math.abs(t * 100 - TARGET * 100)));
+
+function formatClock(t) {
+  const v = Math.max(0, t);
+  const s = Math.floor(v);
+  const c = Math.floor((v - s) * 100);
+  return `${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
+}
+
+function getGridFor(n) {
+  if (n <= 1) return [1, 1];
+  if (n === 2) return [2, 1];
+  if (n === 3) return [3, 1];
+  if (n === 4) return [2, 2];
+  if (n <= 6) return [3, 2];
+  if (n <= 8) return [4, 2];
+  if (n === 9) return [3, 3];
+  return [5, 2];
+}
+
+// Geometry of one player's cell. Depends only on the cell rectangle, so it
+// is computed once per layout instead of every frame.
+function quadGeo(r) {
+  const pad = Math.max(8, Math.min(r.w, r.h) * 0.035);
+  const cardH = Math.max(24, Math.min(r.h * 0.09, 34));
+  const cardW = Math.min(r.w - pad * 2, 240);
+  const top = r.y + pad + cardH + pad;
+  const bot = r.y + r.h - pad * 2 - Math.max(18, r.h * 0.06);
+  const clockW = r.w - pad * 2;
+  const R = Math.max(20, Math.min(clockW, bot - top) * 0.44);
+  return {
+    pad, cardH, cardW, R,
+    cx: r.x + r.w / 2,
+    cy: (top + bot) / 2,
+    statusY: r.y + r.h - pad - Math.max(9, r.h * 0.03),
+    fontWait:    `600 ${Math.max(11, r.h * 0.028)}px ${UI}`,
+    fontStopped: `700 ${Math.max(12, r.h * 0.032)}px ${UI}`,
+    fontScore:   `800 ${Math.max(13, r.h * 0.038)}px ${UI}`,
+    fontCard:    `700 ${Math.max(11, cardH * 0.42)}px ${UI}`,
+    fontDigits:  `800 ${Math.max(18, R * 0.52)}px ${MONO}`,
+  };
+}
+
+function pillPath(c, x, y, w, h, r) {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
 export function start(ctx) {
   const { root, signal } = ctx;
   const on = (t, type, fn) => t.addEventListener(type, fn, { signal });
 
   /* --------------------------- display --------------------------- */
-  root.style.setProperty("background", BG, "important");
-  root.style.setProperty("position", "relative", "important");
-  root.style.setProperty("overflow", "hidden", "important");
-  root.style.setProperty("border", "0", "important");
-  root.style.setProperty("padding", "0", "important");
-  root.style.setProperty("margin", "0", "important");
+  // Remember what we override on #gameRoot so destroy() can put it back
+  // (the page is not reloaded between games, so leftovers would leak).
+  const ROOT_STYLE = {
+    background: BG, position: "relative", overflow: "hidden",
+    border: "0", padding: "0", margin: "0",
+  };
+  const savedRootStyle = Object.keys(ROOT_STYLE).map((k) =>
+    [k, root.style.getPropertyValue(k), root.style.getPropertyPriority(k)]);
+  for (const [k, v] of Object.entries(ROOT_STYLE)) root.style.setProperty(k, v, "important");
 
   const wrapEl = document.createElement("div");
   Object.assign(wrapEl.style, {
@@ -60,8 +161,8 @@ export function start(ctx) {
   });
 
   const canvas = document.createElement("canvas");
-  canvas.width = 1280;
-  canvas.height = 720;
+  canvas.width = W;
+  canvas.height = H;
   Object.assign(canvas.style, {
     display: "block", maxWidth: "100%", maxHeight: "100%",
     aspectRatio: "16 / 9", background: BG,
@@ -70,16 +171,29 @@ export function start(ctx) {
 
   wrapEl.append(canvas);
   root.replaceChildren(wrapEl);
-  const g = canvas.getContext("2d");
+  // Opaque contexts: everything is painted over a solid background anyway,
+  // and the browser can skip alpha blending when compositing.
+  const g = canvas.getContext("2d", { alpha: false });
+  g.lineCap = "round";   // the original look: every line on the main canvas has round ends
+
+  // Off-screen layer holding the static art of the quadrant scene.
+  const layer = document.createElement("canvas");
+  layer.width = W;
+  layer.height = H;
+  const lg = layer.getContext("2d", { alpha: false });
+  let layerKey = "";
 
   /* ---------------------- kill switch / handles ------------------ */
   let exiting = false;
   let raf = 0;
   let last = performance.now();
+  let lastDraw = 0;
+  let dirty = true;            // something changed → repaint next frame
+  let shownLabel = "";         // last countdown label that was painted
 
   /* --------------------------- state ----------------------------- */
   const players = new Map();
-  // countdown | running | reveal | leaderboard
+  // countdown | running | reveal | leaderboard | totals
   let state = "countdown";
   let stateTimer = COUNTDOWN;
   let roundStart = 0;
@@ -88,6 +202,29 @@ export function start(ctx) {
   let currentRound = 0;
   let winnerSlots = [];
 
+  const invalidate = () => { dirty = true; };
+
+  const connectedPlayers = () => {
+    const out = [];
+    for (const p of players.values()) if (p.connected) out.push(p);
+    return out;
+  };
+
+  const countdownLabel = () =>
+    stateTimer > 2.5 ? "3" : stateTimer > 1.5 ? "2" : stateTimer > 0.5 ? "1" : "GO!";
+
+  // The phone button state that matches the current game state. Used to
+  // bring a late joiner / returning player in sync.
+  const phoneStateFor = (p) => {
+    switch (state) {
+      case "running":     return p.stopped ? "stopped" : "armed";
+      case "reveal":      return "stopped";
+      case "leaderboard":
+      case "totals":      return currentRound >= TOTAL_ROUNDS ? "replay" : "start";
+      default:            return "idle";
+    }
+  };
+
   /* ------------------------ player management -------------------- */
   function addPlayer(slot) {
     const existing = players.get(slot);
@@ -95,10 +232,12 @@ export function start(ctx) {
     const info = ctx.player(slot);
     if (!info) return;
     players.set(slot, {
-      slot, connected: true, rect: null,
+      slot, connected: true, rect: null, geo: null,
       stopped: false, stopTime: 0, score: 0, total: 0,
       ready: false,
+      roundScores: [],
       lastSid: null, lastCount: 0,
+      name: "", color: BLUE,
     });
   }
 
@@ -106,11 +245,15 @@ export function start(ctx) {
 
   on(window, "player-join", (e) => {
     if (exiting) return;
-    addPlayer(e.detail.slot);
-    if (state === "running") {
-      ctx.send(e.detail.slot, { type: "stopper-state", state: "armed" });
-    }
+    const slot = e.detail.slot;
+    addPlayer(slot);
+    const p = players.get(slot);
+    // Put the phone's button in the right state (it only ever got "armed"
+    // mid-round before, so a joiner during the leaderboard could not tap
+    // START and the whole table waited on them).
+    if (p && p.connected) ctx.send(slot, { type: "stopper-state", state: phoneStateFor(p) });
     if (state === "countdown") layoutRound();
+    invalidate();
   });
 
   on(window, "player-leave", (e) => {
@@ -120,7 +263,8 @@ export function start(ctx) {
     p.ready = false;
     if (state === "countdown") layoutRound();
     if (state === "running") checkAllStopped();
-    if (state === "leaderboard") checkAllReady();
+    if (state === "leaderboard" || state === "totals") checkAllReady();
+    invalidate();
   });
 
   on(window, "controller-input", (e) => {
@@ -129,6 +273,8 @@ export function start(ctx) {
     const p = players.get(slot);
     if (!p || !data || data.type !== "stop") return;
 
+    // Per-phone de-duplication: the first message of a new session only
+    // syncs the counter; afterwards only a higher count is a real tap.
     const count = data.count | 0;
     if (data.sid !== p.lastSid) {
       p.lastSid = data.sid;
@@ -139,42 +285,31 @@ export function start(ctx) {
     p.lastCount = count;
 
     if (state === "running" && !p.stopped) {
+      // Timestamp taken here, in the handler, not in the render loop.
       p.stopped = true;
       p.stopTime = Math.max(0, (performance.now() - roundStart) / 1000);
-      p.score = Math.max(0, 500 - Math.round(Math.abs(p.stopTime * 100 - TARGET * 100)));
+      p.score = scoreFor(p.stopTime);
       ctx.send(slot, { type: "vibrate", ms: 30 });
       ctx.send(slot, { type: "stopper-state", state: "stopped" });
+      invalidate();
       checkAllStopped();
-    } else if (state === "leaderboard" && !p.ready) {
+    } else if ((state === "leaderboard" || state === "totals") && !p.ready) {
       p.ready = true;
       ctx.send(slot, { type: "vibrate", ms: 20 });
+      invalidate();
       checkAllReady();
     }
   });
 
   /* --------------------------- layout ---------------------------- */
-  function getGridFor(n) {
-    if (n <= 1) return [1, 1];
-    if (n === 2) return [2, 1];
-    if (n === 3) return [3, 1];
-    if (n === 4) return [2, 2];
-    if (n <= 6) return [3, 2];
-    if (n <= 8) return [4, 2];
-    if (n === 9) return [3, 3];
-    return [5, 2];
-  }
-
   function layoutRound() {
-    const all = [...players.values()];
-    const connected = all.filter((p) => p.connected);
+    const connected = connectedPlayers();
     const n = Math.max(1, connected.length);
     const [cols, rows] = getGridFor(n);
-    const W = canvas.width;
-    const H = canvas.height - HEADER_H;
     const cellW = W / cols;
-    const cellH = H / rows;
+    const cellH = (H - HEADER_H) / rows;
 
-    for (const p of all) p.rect = null;
+    for (const p of players.values()) { p.rect = null; p.geo = null; }
 
     connected.forEach((p, i) => {
       const r = Math.floor(i / cols);
@@ -187,17 +322,23 @@ export function start(ctx) {
         w: cellW,
         h: cellH,
       };
+      p.geo = quadGeo(p.rect);
     });
+    invalidate();
   }
 
   /* ---------------------- round control -------------------------- */
   function startRound() {
     if (exiting) return;
     currentRound++;
+    if (currentRound === 1) {
+      for (const p of players.values()) p.roundScores = [];
+    }
     roundStart = 0;
     roundClock = 0;
     aperture = 1;
     winnerSlots = [];
+    shownLabel = "";
     for (const p of players.values()) {
       p.stopped = false;
       p.stopTime = 0;
@@ -208,6 +349,7 @@ export function start(ctx) {
     layoutRound();
     state = "countdown";
     stateTimer = COUNTDOWN;
+    invalidate();
   }
 
   function beginRunning() {
@@ -219,13 +361,14 @@ export function start(ctx) {
         ctx.send(p.slot, { type: "stopper-state", state: "armed" });
       }
     }
+    invalidate();
   }
 
   // Everyone stopped → reveal the clocks for a few seconds. Buttons
   // stay on "stopped" so nobody can advance the game early.
   function checkAllStopped() {
     if (state !== "running") return;
-    const active = [...players.values()].filter((p) => p.connected);
+    const active = connectedPlayers();
     if (active.length === 0) return;
     if (!active.every((p) => p.stopped)) return;
 
@@ -236,20 +379,28 @@ export function start(ctx) {
       if (p.score > best) { best = p.score; winnerSlots = [p.slot]; }
       else if (p.score === best) winnerSlots.push(p.slot);
     }
-    // Fold round score into match total.
-    for (const p of active) p.total += p.score;
+    // Fold round score into match total. History is stored by round
+    // number, so a late joiner's first score lands under the right column.
+    for (const p of active) {
+      p.total += p.score;
+      p.roundScores[currentRound - 1] = p.score;
+    }
 
     aperture = 0;
     state = "reveal";
     stateTimer = REVEAL_DURATION;
     ctx.broadcast({ type: "vibrate", ms: [40, 30, 40] });
+    invalidate();
   }
 
   // Reveal is done → full-screen leaderboard. Now the phone button
   // becomes START (rounds 1-2) or PLAY AGAIN (final round).
+  // After the final round the leaderboard lingers for TOTALS_DELAY
+  // seconds, then flips to the total-scores view.
   function enterLeaderboard() {
     state = "leaderboard";
     const isFinal = currentRound >= TOTAL_ROUNDS;
+    stateTimer = isFinal ? TOTALS_DELAY : 0;
     for (const p of players.values()) {
       if (p.connected) {
         ctx.send(p.slot, {
@@ -258,11 +409,12 @@ export function start(ctx) {
         });
       }
     }
+    invalidate();
   }
 
   function checkAllReady() {
-    if (state !== "leaderboard") return;
-    const active = [...players.values()].filter((p) => p.connected);
+    if (state !== "leaderboard" && state !== "totals") return;
+    const active = connectedPlayers();
     if (active.length === 0) return;
     if (!active.every((p) => p.ready)) return;
     if (currentRound >= TOTAL_ROUNDS) {
@@ -276,40 +428,41 @@ export function start(ctx) {
   startRound();
 
   /* --------------------------- update ---------------------------- */
-  function easeInOut(t) {
-    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  }
-
   function update(dt) {
-    if (exiting) return;
-
     if (state === "countdown") {
       stateTimer -= dt;
-      if (stateTimer <= 0) beginRunning();
+      if (stateTimer <= 0) { beginRunning(); return; }
+      const label = countdownLabel();
+      if (label !== shownLabel) { shownLabel = label; dirty = true; }
       return;
     }
 
     if (state === "running") {
       roundClock = (performance.now() - roundStart) / 1000;
 
+      let ap;
       if (roundClock < CLOSE_START) {
-        aperture = 1;
+        ap = 1;
       } else if (roundClock < CLOSE_START + CLOSE_DURATION) {
-        const t = (roundClock - CLOSE_START) / CLOSE_DURATION;
-        aperture = 1 - easeInOut(t);
+        ap = 1 - easeInOut((roundClock - CLOSE_START) / CLOSE_DURATION);
       } else {
-        aperture = 0;
+        ap = 0;
       }
+      // Digits tick every frame while visible and the iris moves while it
+      // closes. Once it is fully shut nothing changes until someone taps.
+      if (ap !== aperture || ap >= HIDE_BELOW) dirty = true;
+      aperture = ap;
 
       if (roundClock >= MAX_TIME) {
         for (const p of players.values()) {
           if (p.connected && !p.stopped) {
             p.stopped = true;
             p.stopTime = MAX_TIME;
-            p.score = Math.max(0, 500 - Math.round(Math.abs(MAX_TIME * 100 - TARGET * 100)));
+            p.score = scoreFor(MAX_TIME);
             ctx.send(p.slot, { type: "stopper-state", state: "stopped" });
           }
         }
+        dirty = true;
         checkAllStopped();
       }
       return;
@@ -319,36 +472,29 @@ export function start(ctx) {
       stateTimer -= dt;
       // Open the irises during the first REVEAL_ANIM seconds, then hold
       // so the frozen times are readable for the rest of the reveal.
-      const elapsed = REVEAL_DURATION - stateTimer;
-      const t = Math.max(0, Math.min(1, elapsed / REVEAL_ANIM));
-      aperture = easeInOut(t);
+      const ap = easeInOut(clamp01((REVEAL_DURATION - stateTimer) / REVEAL_ANIM));
+      if (ap !== aperture) { aperture = ap; dirty = true; }
       if (stateTimer <= 0) enterLeaderboard();
       return;
     }
 
-    // leaderboard: waiting for taps.
+    if (state === "leaderboard") {
+      // After the final round, hold on the round results for a beat,
+      // then show the total-scores view.
+      if (stateTimer > 0) {
+        stateTimer -= dt;
+        if (stateTimer <= 0) {
+          stateTimer = 0;
+          state = "totals";
+          ctx.broadcast({ type: "vibrate", ms: [30, 40, 30] });
+          invalidate();
+        }
+      }
+    }
+    // totals: waiting for taps.
   }
 
   /* ---------------------------- draw ----------------------------- */
-  function roundRect(x, y, w, h, r) {
-    if (w < 2 * r) r = w / 2;
-    if (h < 2 * r) r = h / 2;
-    g.beginPath();
-    g.moveTo(x + r, y);
-    g.arcTo(x + w, y, x + w, y + h, r);
-    g.arcTo(x + w, y + h, x, y + h, r);
-    g.arcTo(x, y + h, x, y, r);
-    g.arcTo(x, y, x + w, y, r);
-    g.closePath();
-  }
-
-  function formatClock(t) {
-    const v = Math.max(0, t);
-    const s = Math.floor(v);
-    const c = Math.floor((v - s) * 100);
-    return `${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
-  }
-
   /* ---------- 8-blade iris ---------- */
   function drawAperture(cx, cy, R, ap) {
     if (ap >= 0.995) return;
@@ -363,6 +509,8 @@ export function start(ctx) {
     g.arc(cx, cy, R, 0, TAU);
     g.clip();
 
+    g.strokeStyle = FLAP_SEAM;
+    g.lineWidth = 1;
     for (let i = 0; i < N; i++) {
       const a0 = i * step;
       const a1 = (i + 1) * step;
@@ -381,8 +529,6 @@ export function start(ctx) {
 
       g.fillStyle = (i % 2 === 0) ? FLAP : FLAP_ALT;
       g.fill();
-      g.strokeStyle = FLAP_SEAM;
-      g.lineWidth = 1;
       g.stroke();
     }
 
@@ -397,94 +543,86 @@ export function start(ctx) {
     g.restore();
   }
 
-  function drawClockFace(cx, cy, R, timeVal, hidden, color) {
-    g.save();
-    g.shadowColor = CARD_SHADOW;
-    g.shadowBlur = 16;
-    g.shadowOffsetY = 5;
-    g.beginPath();
-    g.arc(cx, cy, R * 1.02, 0, TAU);
-    g.fillStyle = CARD;
-    g.fill();
-    g.restore();
+  /* ---- static art of one cell: painted once into the off-screen layer ---- */
+  function paintCellStatic(c, p) {
+    const r = p.rect, q = p.geo;
 
-    g.beginPath();
-    g.arc(cx, cy, R * 1.02, 0, TAU);
-    g.strokeStyle = "rgba(255,255,255,0.6)";
-    g.lineWidth = 1.5;
-    g.stroke();
-
-    for (let i = 0; i < 12; i++) {
-      const a = i * (TAU / 12) - Math.PI / 2;
-      const r0 = R * 0.86;
-      const r1 = R * 0.92;
-      g.beginPath();
-      g.moveTo(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a));
-      g.lineTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a));
-      g.strokeStyle = "rgba(26,31,61,0.22)";
-      g.lineWidth = 2;
-      g.lineCap = "round";
-      g.stroke();
-    }
-
-    if (hidden) return;
-
-    const txt = formatClock(timeVal);
-    const fontSize = Math.max(18, R * 0.52);
-    g.font = `800 ${fontSize}px "SF Mono", Menlo, Consolas, monospace`;
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillStyle = color;
-    g.fillText(txt, cx, cy + R * 0.02);
-  }
-
-  function drawQuadrant(p) {
-    const r = p.rect;
-    const info = ctx.player(p.slot);
-    const color = (info && info.color) || BLUE;
-    const name = (info && info.name) || `P${p.slot + 1}`;
-
-    g.fillStyle = BG_CELL;
-    g.fillRect(r.x, r.y, r.w, r.h);
-
-    g.strokeStyle = DIVIDER;
-    g.lineWidth = 1;
-    g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    c.fillStyle = BG_CELL;
+    c.fillRect(r.x, r.y, r.w, r.h);
+    c.strokeStyle = DIVIDER;
+    c.lineWidth = 1;
+    c.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
 
     // Name card
-    const pad = Math.max(8, Math.min(r.w, r.h) * 0.035);
-    const cardH = Math.max(24, Math.min(r.h * 0.09, 34));
-    const cardW = Math.min(r.w - pad * 2, 240);
+    c.save();
+    c.shadowColor = CARD_SHADOW;
+    c.shadowBlur = 12;
+    c.shadowOffsetY = 3;
+    c.fillStyle = CARD;
+    pillPath(c, r.x + q.pad, r.y + q.pad, q.cardW, q.cardH, q.cardH / 2);
+    c.fill();
+    c.restore();
 
-    g.save();
-    g.shadowColor = CARD_SHADOW;
-    g.shadowBlur = 12;
-    g.shadowOffsetY = 3;
-    g.fillStyle = CARD;
-    roundRect(r.x + pad, r.y + pad, cardW, cardH, cardH / 2);
-    g.fill();
-    g.restore();
+    c.fillStyle = p.color;
+    c.beginPath();
+    c.arc(r.x + q.pad + q.cardH * 0.55, r.y + q.pad + q.cardH / 2, q.cardH * 0.22, 0, TAU);
+    c.fill();
 
-    const dotR = cardH * 0.22;
-    g.fillStyle = color;
-    g.beginPath();
-    g.arc(r.x + pad + cardH * 0.55, r.y + pad + cardH / 2, dotR, 0, TAU);
-    g.fill();
+    c.fillStyle = INK;
+    c.font = q.fontCard;
+    c.textAlign = "left";
+    c.textBaseline = "middle";
+    c.fillText(p.name, r.x + q.pad + q.cardH, r.y + q.pad + q.cardH / 2 + 1);
 
-    g.fillStyle = INK;
-    g.font = `700 ${Math.max(11, cardH * 0.42)}px Fredoka, system-ui, sans-serif`;
-    g.textAlign = "left";
-    g.textBaseline = "middle";
-    g.fillText(name, r.x + pad + cardH, r.y + pad + cardH / 2 + 1);
+    // Clock face (without digits)
+    const { cx, cy, R } = q;
+    c.save();
+    c.shadowColor = CARD_SHADOW;
+    c.shadowBlur = 16;
+    c.shadowOffsetY = 5;
+    c.beginPath();
+    c.arc(cx, cy, R * 1.02, 0, TAU);
+    c.fillStyle = CARD;
+    c.fill();
+    c.restore();
 
-    // Clock region
-    const top = r.y + pad + cardH + pad;
-    const bot = r.y + r.h - pad * 2 - Math.max(18, r.h * 0.06);
-    const clockH = bot - top;
-    const clockW = r.w - pad * 2;
-    const R = Math.max(20, Math.min(clockW, clockH) * 0.44);
-    const cx = r.x + r.w / 2;
-    const cy = (top + bot) / 2;
+    c.beginPath();
+    c.arc(cx, cy, R * 1.02, 0, TAU);
+    c.strokeStyle = "rgba(255,255,255,0.6)";
+    c.lineWidth = 1.5;
+    c.stroke();
+
+    // 12 hour ticks, stroked one by one (cached, so cost is irrelevant)
+    c.strokeStyle = "rgba(26,31,61,0.22)";
+    c.lineWidth = 2;
+    c.lineCap = "round";
+    for (let i = 0; i < 12; i++) {
+      const a = i * (TAU / 12) - Math.PI / 2;
+      c.beginPath();
+      c.moveTo(cx + R * 0.86 * Math.cos(a), cy + R * 0.86 * Math.sin(a));
+      c.lineTo(cx + R * 0.92 * Math.cos(a), cy + R * 0.92 * Math.sin(a));
+      c.stroke();
+    }
+  }
+
+  // Rebuild the layer only when a cell moved or a name / colour changed.
+  function syncLayer() {
+    let key = "";
+    for (const p of players.values()) {
+      if (!p.rect) continue;
+      const r = p.rect;
+      key += `${p.slot}|${r.x}|${r.y}|${r.w}|${r.h}|${p.color}|${p.name};`;
+    }
+    if (key === layerKey) return;
+    layerKey = key;
+    lg.fillStyle = BG;
+    lg.fillRect(0, 0, W, H);
+    for (const p of players.values()) if (p.rect) paintCellStatic(lg, p);
+  }
+
+  /* ---- live art of one cell: digits, iris, status strip ---- */
+  function paintCellLive(p) {
+    const q = p.geo;
 
     let displayTime;
     if (state === "countdown") displayTime = 0;
@@ -492,99 +630,73 @@ export function start(ctx) {
     else displayTime = roundClock;
 
     // Suppress digits only while the iris is genuinely shut during play.
-    const hidden = (state === "running" && aperture < 0.08);
+    const hidden = state === "running" && aperture < HIDE_BELOW;
+    if (!hidden) {
+      g.font = q.fontDigits;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillStyle = p.color;
+      g.fillText(formatClock(displayTime), q.cx, q.cy + q.R * 0.02);
+    }
 
-    drawClockFace(cx, cy, R, displayTime, hidden, color);
-    drawAperture(cx, cy, R, aperture);
+    drawAperture(q.cx, q.cy, q.R, aperture);
 
     // Status strip
-    const statusY = r.y + r.h - pad - Math.max(9, r.h * 0.03);
     g.textAlign = "center";
     g.textBaseline = "middle";
-
     if (state === "countdown") {
       g.fillStyle = MUTED;
-      g.font = `600 ${Math.max(11, r.h * 0.028)}px Fredoka, system-ui, sans-serif`;
-      g.fillText("Get ready…", cx, statusY);
+      g.font = q.fontWait;
+      g.fillText("Get ready…", q.cx, q.statusY);
     } else if (state === "running") {
       if (p.stopped) {
         g.fillStyle = GREEN;
-        g.font = `700 ${Math.max(12, r.h * 0.032)}px Fredoka, system-ui, sans-serif`;
-        g.fillText("STOPPED", cx, statusY);
+        g.font = q.fontStopped;
+        g.fillText("STOPPED", q.cx, q.statusY);
       } else {
         g.fillStyle = MUTED;
-        g.font = `600 ${Math.max(11, r.h * 0.028)}px Fredoka, system-ui, sans-serif`;
-        g.fillText("Tap when it's 10.00", cx, statusY);
+        g.font = q.fontWait;
+        g.fillText("Tap when it's 10.00", q.cx, q.statusY);
       }
     } else if (state === "reveal") {
       // Frozen time is on the clock face; the strip shows the score.
-      const isWinner = winnerSlots.includes(p.slot);
-      g.fillStyle = isWinner ? GOLD : PILL_TEXT;
-      g.font = `800 ${Math.max(13, r.h * 0.038)}px Fredoka, system-ui, sans-serif`;
-      g.fillText(`Score ${p.score}`, cx, statusY);
+      g.fillStyle = winnerSlots.includes(p.slot) ? GOLD : PILL_TEXT;
+      g.font = q.fontScore;
+      g.fillText(`Score ${p.score}`, q.cx, q.statusY);
     }
   }
 
-  /* -------------- Leaderboard (full-screen table) --------------- */
-  function drawLeaderboard() {
-    const W = canvas.width, H = canvas.height;
-    g.fillStyle = BG;
-    g.fillRect(0, 0, W, H);
+  /* -------- Shared table renderer (leaderboard + totals) -------- */
+  // cfg.heads  : [[label, xFraction], ...] right-aligned column headers
+  // cfg.cells  : (p, y, xs, win) => void   draws the right-aligned columns
+  function drawTable(cfg) {
+    const { title, hint, tableX, maxRowH, heads, rows, tieKey, isWinner, tickDx, cells } = cfg;
+    const tableW = W - tableX * 2;
+    const rowH = Math.min(maxRowH, (H - HEADER_H - 190) / Math.max(1, rows.length));
+    const headerY = HEADER_H + 100;
+    const firstRowY = headerY + 26;
+    const colRank = tableX + 20;
+    const colName = tableX + 80;
+    const xs = heads.map((h) => tableX + tableW * h[1]);
+    const tickX = xs[xs.length - 1] + tickDx;
 
-    const isFinal = currentRound >= TOTAL_ROUNDS;
-    const active = [...players.values()].filter((p) => p.connected);
-
-    // Sort by round score descending; ties by total, then name.
-    const rows = [...active].sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (b.total !== a.total) return b.total - a.total;
-      const an = (ctx.player(a.slot)?.name || "");
-      const bn = (ctx.player(b.slot)?.name || "");
-      return an.localeCompare(bn);
-    });
-
-    // Title
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillStyle = INK_LIGHT;
-    g.font = "800 34px Fredoka, system-ui, sans-serif";
-    g.fillText(isFinal ? "Final Results" : `Round ${currentRound} Results`, W / 2, HEADER_H + 34);
-
-    // Ready counter / prompt
-    const readyCount = active.filter((p) => p.ready).length;
+    g.font = F.title;
+    g.fillText(title, W / 2, HEADER_H + 34);
     g.fillStyle = MUTED;
-    g.font = "600 14px Fredoka, system-ui, sans-serif";
-    g.fillText(
-      isFinal
-        ? `Tap PLAY AGAIN to start a fresh match · ${readyCount} / ${active.length} ready`
-        : `Tap START for the next round · ${readyCount} / ${active.length} ready`,
-      W / 2, HEADER_H + 62
-    );
-
-    // Table geometry
-    const tableX = 140;
-    const tableW = W - tableX * 2;
-    const rowH = Math.min(46, (H - HEADER_H - 190) / Math.max(1, rows.length));
-    const headerY = HEADER_H + 100;
-    const firstRowY = headerY + 26;
-
-    const colRank  = tableX + 20;
-    const colName  = tableX + 80;
-    const colTime  = tableX + tableW * 0.54;
-    const colScore = tableX + tableW * 0.72;
-    const colTotal = tableX + tableW * 0.90;
+    g.font = F.hint;
+    g.fillText(hint, W / 2, HEADER_H + 62);
 
     // Header row
-    g.textBaseline = "middle";
-    g.font = "700 12px Fredoka, system-ui, sans-serif";
+    g.font = F.colHead;
     g.fillStyle = FAINT;
     g.textAlign = "left";
     g.fillText("RANK", colRank, headerY);
     g.fillText("PLAYER", colName, headerY);
     g.textAlign = "right";
-    g.fillText("TIME", colTime, headerY);
-    g.fillText("ROUND", colScore, headerY);
-    g.fillText("TOTAL", colTotal, headerY);
+    heads.forEach((h, i) => g.fillText(h[0], xs[i], headerY));
 
     // Divider under the header
     g.strokeStyle = DIVIDER;
@@ -594,19 +706,17 @@ export function start(ctx) {
     g.lineTo(tableX + tableW, headerY + 16);
     g.stroke();
 
-    // Rows
+    // Rows. Ties share the top rank of their group.
+    let rank = 1;
     rows.forEach((p, i) => {
-      const info = ctx.player(p.slot);
-      const name = (info && info.name) || `P${p.slot + 1}`;
-      const color = (info && info.color) || BLUE;
+      if (i === 0 || p[tieKey] !== rows[i - 1][tieKey]) rank = i + 1;
       const y = firstRowY + i * rowH + rowH / 2;
-      const isWinner = winnerSlots.includes(p.slot);
+      const win = isWinner(p);
 
-      // Rank with ties sharing the top rank of their group.
-      let rank = i + 1;
-      for (let j = i - 1; j >= 0; j--) {
-        if (rows[j].score === p.score) rank = j + 1;
-        else break;
+      if (win && cfg.highlight) {
+        g.fillStyle = "rgba(255,180,0,0.12)";
+        pillPath(g, tableX, y - rowH / 2 + 2, tableW, rowH - 4, 8);
+        g.fill();
       }
 
       // Row separator (skip the first row's top border)
@@ -619,129 +729,176 @@ export function start(ctx) {
         g.stroke();
       }
 
-      // Rank
       g.textAlign = "left";
       g.textBaseline = "middle";
-      g.font = "800 18px Fredoka, system-ui, sans-serif";
-      g.fillStyle = isWinner ? GOLD : MUTED;
+      g.font = F.rank;
+      g.fillStyle = win ? GOLD : MUTED;
       g.fillText(String(rank), colRank, y);
 
-      // Colour dot
-      g.fillStyle = color;
+      g.fillStyle = p.color;
       g.beginPath();
       g.arc(colName - 14, y, 6, 0, TAU);
       g.fill();
 
-      // Name
       g.fillStyle = INK_LIGHT;
-      g.font = "700 18px Fredoka, system-ui, sans-serif";
-      g.textAlign = "left";
-      g.fillText(name, colName, y);
+      g.font = F.name;
+      g.fillText(p.name, colName, y);
 
-      // Time
-      g.fillStyle = INK_LIGHT;
-      g.font = "600 18px 'SF Mono', Menlo, Consolas, monospace";
       g.textAlign = "right";
-      g.fillText(formatClock(p.stopTime), colTime, y);
+      cells(p, y, xs, win);
 
-      // Round score
-      g.fillStyle = isWinner ? GOLD : PILL_TEXT;
-      g.font = "800 20px Fredoka, system-ui, sans-serif";
-      g.fillText(String(p.score), colScore, y);
-
-      // Match total
-      g.fillStyle = MUTED;
-      g.font = "700 16px Fredoka, system-ui, sans-serif";
-      g.fillText(String(p.total), colTotal, y);
-
-      // Ready tick
       if (p.ready) {
         g.fillStyle = GREEN;
-        g.font = "800 18px Fredoka, system-ui, sans-serif";
+        g.font = F.tick;
         g.textAlign = "left";
-        g.fillText("✓", colTotal + 44, y);
+        g.fillText("✓", tickX, y);
       }
     });
 
-    // Footer
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillStyle = FAINT;
-    g.font = "500 13px Fredoka, system-ui, sans-serif";
+    g.font = F.footer;
     g.fillText("Host: press Exit to leave the game", W / 2, H - 20);
+  }
+
+  const byName = (a, b) => a.name.localeCompare(b.name);
+
+  function drawLeaderboard() {
+    const isFinal = currentRound >= TOTAL_ROUNDS;
+    const active = connectedPlayers();
+    // Sort by round score descending; ties by total, then name.
+    const rows = active.sort((a, b) =>
+      (b.score - a.score) || (b.total - a.total) || byName(a, b));
+    const readyCount = active.filter((p) => p.ready).length;
+
+    drawTable({
+      title: isFinal ? "Final Results" : `Round ${currentRound} Results`,
+      hint: isFinal
+        ? `Tap PLAY AGAIN to start a fresh match · ${readyCount} / ${active.length} ready`
+        : `Tap START for the next round · ${readyCount} / ${active.length} ready`,
+      tableX: 140, maxRowH: 46,
+      heads: [["TIME", 0.54], ["ROUND", 0.72], ["TOTAL", 0.90]],
+      rows, tieKey: "score",
+      isWinner: (p) => winnerSlots.includes(p.slot),
+      highlight: false, tickDx: 44,
+      cells(p, y, xs, win) {
+        g.fillStyle = INK_LIGHT;
+        g.font = F.lbTime;
+        g.fillText(formatClock(p.stopTime), xs[0], y);
+
+        g.fillStyle = win ? GOLD : PILL_TEXT;
+        g.font = F.lbRound;
+        g.fillText(String(p.score), xs[1], y);
+
+        g.fillStyle = MUTED;
+        g.font = F.lbTotal;
+        g.fillText(String(p.total), xs[2], y);
+      },
+    });
+  }
+
+  function drawTotals() {
+    const active = connectedPlayers();
+    // Sort by match total descending; ties by name.
+    const rows = active.sort((a, b) => (b.total - a.total) || byName(a, b));
+    const bestTotal = rows.length ? rows[0].total : 0;
+    const readyCount = active.filter((p) => p.ready).length;
+
+    drawTable({
+      title: "Total Scores",
+      hint: `Tap PLAY AGAIN to start a fresh match · ${readyCount} / ${active.length} ready`,
+      tableX: 100, maxRowH: 52,
+      heads: [["ROUND 1", 0.50], ["ROUND 2", 0.62], ["ROUND 3", 0.74], ["TOTAL", 0.88]],
+      rows, tieKey: "total",
+      isWinner: (p) => bestTotal > 0 && p.total === bestTotal,
+      highlight: true, tickDx: 40,
+      cells(p, y, xs, win) {
+        g.font = F.totRound;
+        for (let r = 0; r < TOTAL_ROUNDS; r++) {
+          const v = p.roundScores[r];
+          g.fillStyle = v == null ? FAINT : MUTED;
+          g.fillText(v == null ? "—" : String(v), xs[r], y);
+        }
+        g.fillStyle = win ? GOLD : INK_LIGHT;
+        g.font = F.totTotal;
+        g.fillText(String(p.total), xs[3], y);
+      },
+    });
   }
 
   function drawHeader() {
     g.fillStyle = BG_HEADER;
-    g.fillRect(0, 0, canvas.width, HEADER_H);
+    g.fillRect(0, 0, W, HEADER_H);
     g.strokeStyle = DIVIDER;
     g.lineWidth = 1;
     g.beginPath();
     g.moveTo(0, HEADER_H + 0.5);
-    g.lineTo(canvas.width, HEADER_H + 0.5);
+    g.lineTo(W, HEADER_H + 0.5);
     g.stroke();
 
     g.fillStyle = INK_LIGHT;
-    g.font = "800 16px Fredoka, system-ui, sans-serif";
+    g.font = F.brand;
     g.textAlign = "left";
     g.textBaseline = "middle";
     g.fillText("STOP CLOCK", 20, HEADER_H / 2 + 1);
 
-    const roundText = `Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`;
-    g.font = "700 13px Fredoka, system-ui, sans-serif";
-    const tw = g.measureText(roundText).width;
-    const pillW = tw + 24;
-    const pillX = canvas.width / 2 - pillW / 2;
-    const pillY = HEADER_H / 2 - 12;
+    const roundText = state === "totals"
+      ? "Match complete"
+      : `Round ${Math.max(1, currentRound)} / ${TOTAL_ROUNDS}`;
+    g.font = F.pill;
+    const pillW = g.measureText(roundText).width + 24;
 
     g.fillStyle = PILL_BG;
-    roundRect(pillX, pillY, pillW, 24, 12);
+    pillPath(g, W / 2 - pillW / 2, HEADER_H / 2 - 12, pillW, 24, 12);
     g.fill();
 
     g.fillStyle = PILL_TEXT;
     g.textAlign = "center";
-    g.fillText(roundText, canvas.width / 2, HEADER_H / 2 + 1);
+    g.fillText(roundText, W / 2, HEADER_H / 2 + 1);
 
     g.fillStyle = FAINT;
-    g.font = "600 13px Fredoka, system-ui, sans-serif";
+    g.font = F.rule;
     g.textAlign = "right";
-    g.fillText("Target 10.00 · Perfect = 500", canvas.width - 20, HEADER_H / 2 + 1);
+    g.fillText("Target 10.00 · Perfect = 500", W - 20, HEADER_H / 2 + 1);
   }
 
   function drawCountdown() {
-    const W = canvas.width, H = canvas.height;
     g.fillStyle = "rgba(30,34,70,0.94)";
     g.fillRect(0, HEADER_H, W, H - HEADER_H);
 
     g.textAlign = "center";
     g.textBaseline = "middle";
 
-    const t = stateTimer;
-    const txt = t > 2.5 ? "3" : t > 1.5 ? "2" : t > 0.5 ? "1" : "GO!";
-
     g.fillStyle = BLUE;
-    g.font = "900 150px Fredoka, system-ui, sans-serif";
-    g.fillText(txt, W / 2, H / 2 - 20);
+    g.font = F.countBig;
+    g.fillText(countdownLabel(), W / 2, H / 2 - 20);
 
     g.fillStyle = INK_LIGHT;
-    g.font = "700 22px Fredoka, system-ui, sans-serif";
+    g.font = F.countHint;
     g.fillText("Tap STOP when you think 10.00 s have passed", W / 2, H / 2 + 100);
 
     g.fillStyle = MUTED;
-    g.font = "500 16px Fredoka, system-ui, sans-serif";
+    g.font = F.countSub;
     g.fillText("The iris closes after one second. Count in your head.", W / 2, H / 2 + 132);
   }
 
   function draw() {
-    g.fillStyle = BG;
-    g.fillRect(0, 0, canvas.width, canvas.height);
+    // Names can change at any time, so look them up when drawing.
+    for (const p of players.values()) {
+      const info = ctx.player(p.slot);
+      p.color = (info && info.color) || BLUE;
+      p.name = (info && info.name) || `P${p.slot + 1}`;
+    }
 
-    if (state === "leaderboard") {
-      drawLeaderboard();
+    if (state === "leaderboard" || state === "totals") {
+      g.fillStyle = BG;
+      g.fillRect(0, 0, W, H);
+      if (state === "leaderboard") drawLeaderboard(); else drawTotals();
     } else {
-      for (const p of players.values()) {
-        if (p.rect) drawQuadrant(p);
-      }
+      syncLayer();
+      g.drawImage(layer, 0, 0);          // replaces the full-canvas clear
+      for (const p of players.values()) if (p.rect) paintCellLive(p);
       if (state === "countdown") drawCountdown();
     }
 
@@ -751,19 +908,46 @@ export function start(ctx) {
   /* ------------------------- main loop --------------------------- */
   function frame(now) {
     if (exiting) return;
+    // Schedule first: one bad frame must never freeze the game.
+    raf = requestAnimationFrame(frame);
+
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     update(dt);
-    draw();
-    raf = requestAnimationFrame(frame);
+
+    if (dirty || now - lastDraw >= HEARTBEAT_MS) {
+      dirty = false;
+      lastDraw = now;
+      draw();
+    }
   }
+
+  // The canvas is opaque, so paint once now instead of showing black
+  // for the first frame.
+  draw();
+  dirty = false;
+  lastDraw = performance.now();
+
+  // The canvas can be dropped while the tab is hidden; repaint on return.
+  on(document, "visibilitychange", invalidate);
+
   raf = requestAnimationFrame(frame);
 
   return {
     destroy() {
+      if (exiting) return;
       exiting = true;
       cancelAnimationFrame(raf);
       raf = 0;
+
+      // Give #gameRoot back exactly as we found it.
+      for (const [k, v, prio] of savedRootStyle) {
+        if (v) root.style.setProperty(k, v, prio);
+        else root.style.removeProperty(k);
+      }
+      wrapEl.remove();
+      layer.width = layer.height = 0;   // release the off-screen bitmap
+      players.clear();
     },
   };
 }
