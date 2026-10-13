@@ -19,10 +19,23 @@
 //   * the game never exits on its own
 //
 // Theme: dark navy (localJoy chrome). Fredoka everywhere.
+//
+// Performance notes:
+//   * The maze is stored in flat typed arrays (one byte of wall bits per
+//     cell, index = y * MAZE_W + x) instead of an object per cell.
+//   * Per-player fog-of-war uses preallocated typed arrays, no Map/array
+//     allocation when a rat changes cell.
+//   * Per-cell colours are precomputed strings; floors / walls / wall
+//     highlights are drawn in three passes so fillStyle changes only when
+//     the fade depth changes.
+//   * Radial gradients are created once and reused through translate().
+//   * Temperature bucket / colour is a per-round lookup table.
 
 const VIEW_W = 1280, VIEW_H = 720;
 const MAZE_W = 21, MAZE_H = 15;
+const MAZE_N = MAZE_W * MAZE_H;
 const START = { x: 1, y: 1 };
+const START_IDX = START.y * MAZE_W + START.x;
 const VIS_DEPTH = 6;
 const MOVE_SPEED = 5;
 const COUNTDOWN_TIME = 3.2;
@@ -33,11 +46,12 @@ const PILL_COUNT = 3;
 const PILL_MIN_GAP = 5;
 const PILL_START_CLEAR = 3;
 
+const TAU = Math.PI * 2;
+const FONT = "Fredoka, system-ui, sans-serif";
+
 // Player / object colours.
 const OTHER_RAT_COLOR = "#3ecf6e";
 
-// Freeze duration in seconds by the victim's temperature bucket.
-const FREEZE = { HOT: 5, WARM: 4, COOL: 2, COLD: 1, FREEZING: 0 };
 const BUTTON_DIR = { Y: "up", A: "down", X: "left", B: "right" };
 
 // -------- Palette (matches localJoy chrome) --------
@@ -47,12 +61,10 @@ const CARD        = "#1a1e3d";
 const CARD_EDGE   = "rgba(255,255,255,0.08)";
 const INK         = "#ffffff";
 const MUTED       = "#8b93b8";
-const FAINT       = "#5a6188";
 const FLOOR_RGB   = [200, 212, 240];
 const WALL_RGB    = [8, 12, 36];
 const WALL_HI_RGB = [91, 141, 239];
 const BLUE        = "#5b8def";
-const GOLD        = "#ffb400";
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const rgbaStr = ([r, g, b], a) => `rgba(${r},${g},${b},${a})`;
@@ -73,154 +85,176 @@ function hexToRgb(hex) {
   ];
 }
 
-/* ---------------- Temperature colour scale ---------------- */
-const HOT_RGB = [229, 72, 77];
-const COLD_RGB = [59, 139, 255];
-
-function tempBucket(ratio) {
-  if (ratio < 0.15) return "HOT";
-  if (ratio < 0.30) return "WARM";
-  if (ratio < 0.55) return "COOL";
-  if (ratio < 0.80) return "COLD";
-  return "FREEZING";
+// Joystick values: coerce to a number and clamp to -1..1.
+function clampAxis(v) {
+  v = +v;
+  return v !== v ? 0 : v > 1 ? 1 : v < -1 ? -1 : v;
 }
 
-function tempRGB(ratio) {
-  const t = ({ HOT: 0, WARM: 0.25, COOL: 0.5, COLD: 0.75, FREEZING: 1 })[tempBucket(ratio)];
-  return [
-    Math.round(HOT_RGB[0] * (1 - t) + COLD_RGB[0] * t),
-    Math.round(HOT_RGB[1] * (1 - t) + COLD_RGB[1] * t),
-    Math.round(HOT_RGB[2] * (1 - t) + COLD_RGB[2] * t),
-  ];
+/* ---------------- Direction / wall constants ---------------- */
+// Wall bits stored per cell.
+const WALL_N = 1, WALL_E = 2, WALL_S = 4, WALL_W = 8;
+// Direction indices: 0 north, 1 east, 2 south, 3 west.
+const DIR_N = 0, DIR_E = 1, DIR_S = 2, DIR_W = 3;
+const DIR_BIT   = [WALL_N, WALL_E, WALL_S, WALL_W];
+const OPP_BIT   = [WALL_S, WALL_W, WALL_N, WALL_E];
+const DIR_DX    = [0, 1, 0, -1];
+const DIR_DY    = [-1, 0, 1, 0];
+const DIR_ANGLE = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+
+// Number of open sides for every wall mask.
+const OPEN_COUNT = new Uint8Array(16);
+for (let m = 0; m < 16; m++) {
+  let c = 0;
+  for (let b = 0; b < 4; b++) if (!(m & (1 << b))) c++;
+  OPEN_COUNT[m] = c;
+}
+
+/* ---------------- Temperature scale ---------------- */
+// Buckets: 0 HOT, 1 WARM, 2 COOL, 3 COLD, 4 FREEZING, 5 unknown (unreachable).
+const TEMP_FREEZING = 4;
+const TEMP_UNKNOWN = 5;
+const HOT_RGB = [229, 72, 77];
+const COLD_RGB = [59, 139, 255];
+const TEMP_T = [0, 0.25, 0.5, 0.75, 1];
+const TEMP_RGB = TEMP_T.map((t) => [
+  Math.round(HOT_RGB[0] * (1 - t) + COLD_RGB[0] * t),
+  Math.round(HOT_RGB[1] * (1 - t) + COLD_RGB[1] * t),
+  Math.round(HOT_RGB[2] * (1 - t) + COLD_RGB[2] * t),
+]);
+TEMP_RGB.push([136, 136, 136]);
+const TEMP_COLOR       = TEMP_RGB.map(rgbStr);
+const TEMP_GLOW_ON     = TEMP_RGB.map((c) => rgbaStr(c, 0.55));
+const TEMP_GLOW_FROZEN = TEMP_RGB.map((c) => rgbaStr(c, 0.25));
+const TEMP_GLOW_OFF    = TEMP_RGB.map((c) => rgbaStr(c, 0));
+// Freeze duration in seconds by the victim's temperature bucket.
+const FREEZE_SECS = [5, 4, 2, 1, 0, 0];
+
+function tempBucket(ratio) {
+  if (ratio < 0.15) return 0;
+  if (ratio < 0.30) return 1;
+  if (ratio < 0.55) return 2;
+  if (ratio < 0.80) return 3;
+  return TEMP_FREEZING;
+}
+
+/* ---------------- Per-depth fog colours ---------------- */
+const FLOOR_STYLE = [], WALL_STYLE = [], HI_STYLE = [];
+for (let d = 0; d <= VIS_DEPTH; d++) {
+  const a = Math.max(0.35, 1 - (d / VIS_DEPTH) * 0.65);
+  FLOOR_STYLE.push(rgbaStr(FLOOR_RGB, a));
+  WALL_STYLE.push(rgbaStr(WALL_RGB, a));
+  HI_STYLE.push(rgbaStr(WALL_HI_RGB, a * 0.7));
 }
 
 /* ---------------- Maze ---------------- */
+// maze = { w, h, walls: Uint8Array (wall bits per cell), step: index delta per direction }
 function generateMaze(w, h) {
-  const cells = [];
-  for (let y = 0; y < h; y++) {
-    const row = [];
-    for (let x = 0; x < w; x++) row.push({ n: true, e: true, s: true, w: true, vis: false });
-    cells.push(row);
-  }
-  const stack = [{ x: 1, y: 1 }];
-  cells[1][1].vis = true;
-  const dirs = [
-    { dx: 0, dy: -1, wall: "n", opp: "s" },
-    { dx: 1, dy: 0, wall: "e", opp: "w" },
-    { dx: 0, dy: 1, wall: "s", opp: "n" },
-    { dx: -1, dy: 0, wall: "w", opp: "e" },
-  ];
-  while (stack.length) {
-    const cur = stack[stack.length - 1];
-    const nbrs = [];
-    for (const d of dirs) {
-      const nx = cur.x + d.dx, ny = cur.y + d.dy;
+  const walls = new Uint8Array(w * h).fill(15);
+  const seen = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  const cand = [0, 0, 0, 0];
+  let sp = 0;
+
+  const first = 1 * w + 1;
+  seen[first] = 1;
+  stack[sp++] = first;
+
+  while (sp > 0) {
+    const cur = stack[sp - 1];
+    const cy = (cur / w) | 0, cx = cur - cy * w;
+    let n = 0;
+    for (let d = 0; d < 4; d++) {
+      const nx = cx + DIR_DX[d], ny = cy + DIR_DY[d];
       if (nx <= 0 || ny <= 0 || nx >= w - 1 || ny >= h - 1) continue;
-      if (cells[ny][nx].vis) continue;
-      nbrs.push({ nx, ny, d });
+      if (seen[ny * w + nx]) continue;
+      cand[n++] = d;
     }
-    if (!nbrs.length) { stack.pop(); continue; }
-    const { nx, ny, d } = nbrs[(Math.random() * nbrs.length) | 0];
-    cells[cur.y][cur.x][d.wall] = false;
-    cells[ny][nx][d.opp] = false;
-    cells[ny][nx].vis = true;
-    stack.push({ x: nx, y: ny });
+    if (!n) { sp--; continue; }
+    const d = cand[(Math.random() * n) | 0];
+    const next = (cy + DIR_DY[d]) * w + cx + DIR_DX[d];
+    walls[cur] &= ~DIR_BIT[d];
+    walls[next] &= ~OPP_BIT[d];
+    seen[next] = 1;
+    stack[sp++] = next;
   }
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells[y][x].vis = false;
-  return { w, h, cells };
+  return { w, h, walls, step: [-w, 1, w, -1] };
 }
 
-// BFS distances. Uses a moving head index instead of Array.shift().
+// BFS distances from one cell (flat Int16Array, -1 = unreachable).
 function bfsDistances(maze, from) {
-  const dist = [];
-  for (let y = 0; y < maze.h; y++) dist.push(new Array(maze.w).fill(-1));
-  dist[from.y][from.x] = 0;
-
-  const q = [{ x: from.x, y: from.y }];
-  let head = 0;
-  const dirs = [
-    { dx: 0, dy: -1, wall: "n" },
-    { dx: 1, dy: 0, wall: "e" },
-    { dx: 0, dy: 1, wall: "s" },
-    { dx: -1, dy: 0, wall: "w" },
-  ];
-  while (head < q.length) {
-    const { x, y } = q[head++];
-    const cell = maze.cells[y][x];
-    const d = dist[y][x];
-    for (const dir of dirs) {
-      if (cell[dir.wall]) continue;
-      const nx = x + dir.dx, ny = y + dir.dy;
-      if (dist[ny][nx] !== -1) continue;
-      dist[ny][nx] = d + 1;
-      q.push({ x: nx, y: ny });
+  const { walls, step } = maze;
+  const dist = new Int16Array(maze.w * maze.h).fill(-1);
+  const q = new Int32Array(dist.length);
+  let head = 0, tail = 0;
+  dist[from] = 0;
+  q[tail++] = from;
+  while (head < tail) {
+    const i = q[head++];
+    const m = walls[i];
+    const nd = dist[i] + 1;
+    for (let k = 0; k < 4; k++) {
+      if (m & DIR_BIT[k]) continue;
+      const j = i + step[k];
+      if (dist[j] !== -1) continue;
+      dist[j] = nd;
+      q[tail++] = j;
     }
   }
   return dist;
 }
 
-// Single Map: key = x*1000 + y, value = BFS depth.
-function visibleCells(maze, cx, cy, maxDepth) {
-  const map = new Map();
-  map.set(cx * 1000 + cy, 0);
-  const q = [[cx, cy, 0]];
-  let head = 0;
-  const dirs = [[0, -1, "n"], [1, 0, "e"], [0, 1, "s"], [-1, 0, "w"]];
-  while (head < q.length) {
-    const [x, y, d] = q[head++];
+// Fog of war: BFS up to maxDepth through open corridors.
+// Fills `depth` (-1 = hidden) and `list` (visible cell indices in BFS order,
+// so depths are non-decreasing). Returns the number of visible cells.
+// The caller must have reset `depth` to -1 beforehand.
+function computeVisibility(maze, start, maxDepth, depth, list) {
+  const { walls, step } = maze;
+  let head = 0, tail = 0;
+  depth[start] = 0;
+  list[tail++] = start;
+  while (head < tail) {
+    const i = list[head++];
+    const d = depth[i];
     if (d >= maxDepth) continue;
-    const cell = maze.cells[y][x];
-    for (let i = 0; i < 4; i++) {
-      const dx = dirs[i][0], dy = dirs[i][1], wall = dirs[i][2];
-      if (cell[wall]) continue;
-      const nx = x + dx, ny = y + dy;
-      const kk = nx * 1000 + ny;
-      if (map.has(kk)) continue;
-      map.set(kk, d + 1);
-      q.push([nx, ny, d + 1]);
+    const m = walls[i];
+    for (let k = 0; k < 4; k++) {
+      if (m & DIR_BIT[k]) continue;
+      const j = i + step[k];
+      if (depth[j] >= 0) continue;
+      depth[j] = d + 1;
+      list[tail++] = j;
     }
   }
-  return map;
+  return tail;
 }
 
-function exitDirection(maze, distToExit, x, y) {
-  if (distToExit[y][x] <= 0) return null;
-  const cell = maze.cells[y][x];
-  const dirs = [
-    { dx: 0, dy: -1, wall: "n", dir: "n" },
-    { dx: 1, dy: 0,  wall: "e", dir: "e" },
-    { dx: 0, dy: 1,  wall: "s", dir: "s" },
-    { dx: -1, dy: 0, wall: "w", dir: "w" },
-  ];
-  let best = null;
-  for (const d of dirs) {
-    if (cell[d.wall]) continue;
-    const nx = x + d.dx, ny = y + d.dy;
-    const nd = distToExit[ny]?.[nx] ?? -1;
+// Direction index (0-3) of the neighbour closest to the exit, or -1.
+function exitDirection(maze, distToExit, idx) {
+  if (distToExit[idx] <= 0) return -1;
+  const m = maze.walls[idx];
+  let best = -1, bestD = 0;
+  for (let d = 0; d < 4; d++) {
+    if (m & DIR_BIT[d]) continue;
+    const nd = distToExit[idx + maze.step[d]];
     if (nd < 0) continue;
-    if (best === null || nd < best.nd) best = { nd, dir: d.dir };
+    if (best < 0 || nd < bestD) { best = d; bestD = nd; }
   }
-  return best ? best.dir : null;
+  return best;
 }
 
 /* ---------------- Pills ---------------- */
-function isDeadEnd(cell) {
-  let openings = 0;
-  if (!cell.n) openings++;
-  if (!cell.s) openings++;
-  if (!cell.e) openings++;
-  if (!cell.w) openings++;
-  return openings === 1;
-}
-
 function generatePills(maze, distToExit, count) {
   const all = [];
   for (let y = 1; y < maze.h - 1; y++) {
     for (let x = 1; x < maze.w - 1; x++) {
-      const d = distToExit[y][x];
-      if (d < 0) continue;
+      const idx = y * maze.w + x;
+      // d < 0: unreachable. d === 0: the cheese cell (a pill there would be
+      // hidden under the cheese and trigger on the winning step).
+      const d = distToExit[idx];
+      if (d <= 0) continue;
       if (Math.abs(x - START.x) + Math.abs(y - START.y) < PILL_START_CLEAR) continue;
-      all.push({ x, y, d, dead: isDeadEnd(maze.cells[y][x]) });
+      all.push({ x, y, idx, d, dead: OPEN_COUNT[maze.walls[idx]] === 1 });
     }
   }
   if (!all.length) return [];
@@ -239,22 +273,39 @@ function generatePills(maze, distToExit, count) {
   for (const c of pool) {
     if (pills.length >= count) break;
     if (pills.some((p) => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) < PILL_MIN_GAP)) continue;
-    pills.push({ x: c.x, y: c.y });
+    pills.push({ x: c.x, y: c.y, idx: c.idx });
   }
   return pills;
 }
 
-/* ---------------- Rat mascot ---------------- */
+/* ---------------- Sprite helpers ---------------- */
+// Circle as a sub-path (explicit moveTo so sub-paths never get joined).
+function circlePath(g, x, y, r) {
+  g.moveTo(x + r, y);
+  g.arc(x, y, r, 0, TAU);
+}
+
+function roundRectPath(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+}
+
+// dir: 0 north, 1 east, 2 south, 3 west.
 function drawRat(g, cx, cy, r, dir, color) {
-  const angle = ({ n: -Math.PI / 2, e: 0, s: Math.PI / 2, w: Math.PI })[dir] ?? 0;
   g.save();
   g.translate(cx, cy);
-  g.rotate(angle);
+  g.rotate(DIR_ANGLE[dir] ?? 0);
 
   const bodyRX = r * 0.95, bodyRY = r * 0.78;
   const headR = r * 0.58, headX = r * 0.68;
   const earR = r * 0.32, earInnerR = r * 0.16;
+  const earX = headX - r * 0.1, earY = r * 0.62;
 
+  // Tail
   g.strokeStyle = color;
   g.lineWidth = r * 0.16;
   g.lineCap = "round";
@@ -263,26 +314,44 @@ function drawRat(g, cx, cy, r, dir, color) {
   g.quadraticCurveTo(-bodyRX * 1.7, -bodyRY * 0.6, -bodyRX * 1.4, -bodyRY * 1.1);
   g.stroke();
 
+  // Ears + body + head: same opaque colour, one fill.
   g.fillStyle = color;
-  g.beginPath(); g.arc(headX - r * 0.1, -r * 0.62, earR, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(headX - r * 0.1,  r * 0.62, earR, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(0, 0, bodyRX, bodyRY, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(headX, 0, headR, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  circlePath(g, earX, -earY, earR);
+  circlePath(g, earX,  earY, earR);
+  g.moveTo(bodyRX, 0);
+  g.ellipse(0, 0, bodyRX, bodyRY, 0, 0, TAU);
+  circlePath(g, headX, 0, headR);
+  g.fill();
 
+  // Inner ears
   g.fillStyle = "#ffb8c8";
-  g.beginPath(); g.arc(headX - r * 0.1, -r * 0.62, earInnerR, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(headX - r * 0.1,  r * 0.62, earInnerR, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  circlePath(g, earX, -earY, earInnerR);
+  circlePath(g, earX,  earY, earInnerR);
+  g.fill();
 
+  // Eyes
   g.fillStyle = "#10202b";
-  g.beginPath(); g.arc(headX + headR * 0.25, -headR * 0.35, r * 0.13, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(headX + headR * 0.25,  headR * 0.35, r * 0.13, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  circlePath(g, headX + headR * 0.25, -headR * 0.35, r * 0.13);
+  circlePath(g, headX + headR * 0.25,  headR * 0.35, r * 0.13);
+  g.fill();
+
+  // Eye shine
   g.fillStyle = "rgba(255,255,255,0.85)";
-  g.beginPath(); g.arc(headX + headR * 0.32, -headR * 0.42, r * 0.05, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(headX + headR * 0.32,  headR * 0.28, r * 0.05, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  circlePath(g, headX + headR * 0.32, -headR * 0.42, r * 0.05);
+  circlePath(g, headX + headR * 0.32,  headR * 0.28, r * 0.05);
+  g.fill();
 
+  // Nose
   g.fillStyle = "#ff8fa8";
-  g.beginPath(); g.arc(headX + headR * 0.9, 0, r * 0.11, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  circlePath(g, headX + headR * 0.9, 0, r * 0.11);
+  g.fill();
 
+  // Whiskers
   g.strokeStyle = "rgba(16,32,43,0.45)";
   g.lineWidth = r * 0.04;
   g.beginPath();
@@ -295,8 +364,8 @@ function drawRat(g, cx, cy, r, dir, color) {
   g.restore();
 }
 
-/* ---------------- Pill visual ---------------- */
-function drawPill(g, cx, cy, s) {
+// `glow` is a cached radial gradient centred on (0,0) with radius s * 1.8.
+function drawPill(g, cx, cy, s, glow) {
   g.save();
   g.translate(cx, cy);
   g.rotate(-Math.PI / 5);
@@ -306,9 +375,6 @@ function drawPill(g, cx, cy, s) {
   const r = w / 2;
   const x = -w / 2, y = -h / 2;
 
-  const glow = g.createRadialGradient(0, 0, 0, 0, 0, s * 1.8);
-  glow.addColorStop(0, "rgba(62,207,110,0.55)");
-  glow.addColorStop(1, "rgba(62,207,110,0)");
   g.fillStyle = glow;
   g.fillRect(-s * 1.8, -s * 1.8, s * 3.6, s * 3.6);
 
@@ -339,20 +405,17 @@ function drawPill(g, cx, cy, s) {
 
   g.fillStyle = "rgba(255,255,255,0.65)";
   g.beginPath();
-  g.ellipse(x + w * 0.28, y + h * 0.22, w * 0.16, h * 0.09, 0, 0, Math.PI * 2);
+  g.ellipse(x + w * 0.28, y + h * 0.22, w * 0.16, h * 0.09, 0, 0, TAU);
   g.fill();
 
   g.restore();
 }
 
-/* ---------------- Cheese ---------------- */
-function drawCheese(g, cx, cy, s) {
+// `glow` is a cached radial gradient centred on (0,0) with radius s * 2.4.
+function drawCheese(g, cx, cy, s, glow) {
   g.save();
   g.translate(cx, cy);
 
-  const glow = g.createRadialGradient(0, 0, 0, 0, 0, s * 2.4);
-  glow.addColorStop(0, "rgba(255,200,80,0.7)");
-  glow.addColorStop(1, "rgba(255,200,80,0)");
   g.fillStyle = glow;
   g.fillRect(-s * 2.4, -s * 2.4, s * 4.8, s * 4.8);
 
@@ -373,21 +436,19 @@ function drawCheese(g, cx, cy, s) {
   g.fillRect(-w, h * 0.30, w * 2, h);
   g.restore();
 
+  // The wedge path is still the current path (save/restore doesn't touch it).
   g.strokeStyle = "#b07a12";
   g.lineWidth = Math.max(2, s * 0.09);
   g.lineJoin = "round";
-  g.beginPath();
-  g.moveTo(-w, h * 0.55);
-  g.lineTo(w, h * 0.55);
-  g.lineTo(w * 0.30, -h * 0.75);
-  g.closePath();
   g.stroke();
 
   g.fillStyle = "#c99120";
-  g.beginPath(); g.arc(-w * 0.35, h * 0.25, s * 0.13, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc( w * 0.30, h * 0.18, s * 0.10, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(-w * 0.05, -h * 0.05, s * 0.09, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc( w * 0.05, h * 0.42, s * 0.07, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  circlePath(g, -w * 0.35, h * 0.25, s * 0.13);
+  circlePath(g,  w * 0.30, h * 0.18, s * 0.10);
+  circlePath(g, -w * 0.05, -h * 0.05, s * 0.09);
+  circlePath(g,  w * 0.05, h * 0.42, s * 0.07);
+  g.fill();
 
   g.fillStyle = "rgba(255,255,255,0.55)";
   g.beginPath();
@@ -400,12 +461,8 @@ function drawCheese(g, cx, cy, s) {
   g.restore();
 }
 
-function getLayout(n) {
-  if (n <= 1) return [1, 1];
-  if (n === 2) return [1, 2];
-  if (n <= 4) return [2, 2];
-  return [2, 3];
-}
+// [rows, cols] by player count (index 0 unused; 6+ share the 2x3 grid).
+const LAYOUTS = [[1, 1], [1, 1], [1, 2], [2, 2], [2, 2], [2, 3], [2, 3]];
 
 /* ============================================================
    Entry point
@@ -413,13 +470,15 @@ function getLayout(n) {
 export function start(ctx) {
   const { root, signal } = ctx;
 
-  // Themed wrapper.
-  root.style.setProperty("background", BG, "important");
-  root.style.setProperty("position", "relative", "important");
-  root.style.setProperty("overflow", "hidden", "important");
-  root.style.setProperty("border", "0", "important");
-  root.style.setProperty("padding", "0", "important");
-  root.style.setProperty("margin", "0", "important");
+  // Themed wrapper. Previous inline values are restored in destroy().
+  const ROOT_STYLE = [
+    ["background", BG], ["position", "relative"], ["overflow", "hidden"],
+    ["border", "0"], ["padding", "0"], ["margin", "0"],
+  ];
+  const savedRootStyle = ROOT_STYLE.map(([k]) => [
+    k, root.style.getPropertyValue(k), root.style.getPropertyPriority(k),
+  ]);
+  for (const [k, v] of ROOT_STYLE) root.style.setProperty(k, v, "important");
 
   const wrap = document.createElement("div");
   Object.assign(wrap.style, {
@@ -438,16 +497,62 @@ export function start(ctx) {
   });
   wrap.append(canvas);
   root.replaceChildren(wrap);
-  const g = canvas.getContext("2d");
+  // Opaque canvas: every frame starts with a full BG fill.
+  const g = canvas.getContext("2d", { alpha: false });
+
+  /* ---------------- Cached gradients ----------------
+     Canvas gradients are painted through the current transform, so a
+     gradient built around (0,0) can be reused anywhere via translate(). */
+  function makeGlowCache(stops) {
+    const byRadius = new Map();   // a few radii at most (one per layout / sprite size)
+    return (r) => {
+      let gr = byRadius.get(r);
+      if (!gr) {
+        if (byRadius.size > 16) byRadius.clear();
+        gr = g.createRadialGradient(0, 0, 0, 0, 0, r);
+        for (const [o, col] of stops) gr.addColorStop(o, col);
+        byRadius.set(r, gr);
+      }
+      return gr;
+    };
+  }
+  function makeViewportGradientCache(innerK, outerK, stops) {
+    const c = { w: -1, h: -1, grad: null };
+    return (w, h) => {
+      if (c.w !== w || c.h !== h) {
+        const gr = g.createRadialGradient(
+          0, 0, Math.min(w, h) * innerK, 0, 0, Math.max(w, h) * outerK);
+        for (const [o, col] of stops) gr.addColorStop(o, col);
+        c.w = w; c.h = h; c.grad = gr;
+      }
+      return c.grad;
+    };
+  }
+
+  const pillGlowFor   = makeGlowCache([[0, "rgba(62,207,110,0.55)"], [1, "rgba(62,207,110,0)"]]);
+  const cheeseGlowFor = makeGlowCache([[0, "rgba(255,200,80,0.7)"],  [1, "rgba(255,200,80,0)"]]);
+  // Own-rat glow: [bucket][frozen ? 1 : 0]
+  const ownGlowFor = TEMP_RGB.map((_, b) => [
+    makeGlowCache([[0, TEMP_GLOW_ON[b]],     [1, TEMP_GLOW_OFF[b]]]),
+    makeGlowCache([[0, TEMP_GLOW_FROZEN[b]], [1, TEMP_GLOW_OFF[b]]]),
+  ]);
+  const vignetteFor = makeViewportGradientCache(0.25, 0.7, [
+    [0, "rgba(8,12,26,0)"], [1, "rgba(8,12,26,0.55)"],
+  ]);
+  // Drawn with globalAlpha = pulse, so the stops stay constant.
+  const shockFor = makeViewportGradientCache(0.15, 0.75, [
+    [0, "rgba(159,209,255,0)"], [0.6, "rgba(159,209,255,0.2)"], [1, "rgba(159,209,255,0.55)"],
+  ]);
 
   /* ---------------- Runtime state ---------------- */
   const players = new Map();
-  const inputs = new Map();
-  const dpad = new Map();
+  const inputs = new Map();   // slot -> { x, y } (joystick, clamped)
+  const dpad = new Map();     // slot -> { up, down, left, right }
 
   let maze = null;
-  let exit = { x: 1, y: 1 };
+  let exitIdx = START_IDX, exitX = START.x, exitY = START.y;
   let distToExit = null;
+  let tempAt = null;          // Int8Array: temperature bucket per cell
   let maxDist = 1;
   let pills = [];
 
@@ -464,25 +569,33 @@ export function start(ctx) {
   let last = performance.now();
   let exiting = false;
 
-  // Cached, sorted player list. Invalidated on join/leave.
+  // Scratch buffers reused by every viewport render (rendering is sequential).
+  const scratchMask = new Uint8Array(MAZE_N);
+  const scratchSX = new Float64Array(MAZE_N);
+  const scratchSY = new Float64Array(MAZE_N);
+  const vp = { x: 0, y: 0, w: 0, h: 0 };
+  let inputX = 0, inputY = 0;   // result of readInput()
+
+  // Cached player lists. Rebuilt only after join/leave.
+  //   playerList  – insertion order (same as Map iteration), used for game logic
+  //   playerOrder – sorted by slot, used for screen layout
+  let playerList = [];
   let playerOrder = [];
-  let playerOrderDirty = true;
-  const markPlayerOrderDirty = () => { playerOrderDirty = true; };
-  function getOrderedPlayers() {
-    if (playerOrderDirty) {
-      playerOrder = [...players.values()].sort((a, b) => a.slot - b.slot);
-      playerOrderDirty = false;
-    }
-    return playerOrder;
+  let playersDirty = true;
+  function refreshPlayerLists() {
+    if (!playersDirty) return;
+    playerList = [...players.values()];
+    playerOrder = playerList.slice().sort((a, b) => a.slot - b.slot);
+    playersDirty = false;
   }
 
   function makePlayer(slot) {
     return {
       slot,
-      cellX: START.x, cellY: START.y,
+      cellX: START.x, cellY: START.y, idx: START_IDX,
       prevX: START.x, prevY: START.y,
       t: 1,
-      dir: "s",
+      dir: DIR_S,
       active: false,
       ready: false,
       finished: false,
@@ -494,16 +607,26 @@ export function start(ctx) {
       pickupFlash: -Infinity,
       noPickupUntil: -Infinity,
       frozenUntil: -Infinity,
-      // Visibility cache: recomputed only when cellX / cellY changes.
-      visCx: -1, visCy: -1, visMap: null,
+      // Fog-of-war cache: recomputed only when the rat's cell changes.
+      visAt: -1,
+      visCount: 0,
+      visDepth: new Int8Array(MAZE_N).fill(-1),
+      visList: new Int32Array(MAZE_N),
     };
   }
 
+  function clearVisibility(p) {
+    const depth = p.visDepth, list = p.visList;
+    for (let k = 0; k < p.visCount; k++) depth[list[k]] = -1;
+    p.visCount = 0;
+    p.visAt = -1;
+  }
+
   function resetPlayer(p) {
-    p.cellX = START.x; p.cellY = START.y;
+    p.cellX = START.x; p.cellY = START.y; p.idx = START_IDX;
     p.prevX = START.x; p.prevY = START.y;
     p.t = 1;
-    p.dir = "s";
+    p.dir = DIR_S;
     p.finished = false;
     p.dnf = false;
     p.place = 0;
@@ -514,30 +637,39 @@ export function start(ctx) {
     p.pickupFlash = -Infinity;
     p.noPickupUntil = -Infinity;
     p.frozenUntil = -Infinity;
-    p.visCx = -1; p.visCy = -1; p.visMap = null;
+    clearVisibility(p);
   }
 
-  function getVisibility(p) {
-    if (p.visCx === p.cellX && p.visCy === p.cellY && p.visMap) return p.visMap;
-    const m = visibleCells(maze, p.cellX, p.cellY, VIS_DEPTH);
-    p.visCx = p.cellX;
-    p.visCy = p.cellY;
-    p.visMap = m;
-    return m;
+  function refreshVisibility(p) {
+    if (p.visAt === p.idx) return;
+    clearVisibility(p);
+    p.visCount = computeVisibility(maze, p.idx, VIS_DEPTH, p.visDepth, p.visList);
+    p.visAt = p.idx;
   }
+
+  const isRacing = (p) => p.active && !p.finished && !p.dnf;
 
   function newRound() {
     maze = generateMaze(MAZE_W, MAZE_H);
-    const fromStart = bfsDistances(maze, START);
+    const fromStart = bfsDistances(maze, START_IDX);
     let best = 0;
-    exit = { x: START.x, y: START.y };
-    for (let y = 1; y < maze.h - 1; y++) {
-      for (let x = 1; x < maze.w - 1; x++) {
-        if (fromStart[y][x] > best) { best = fromStart[y][x]; exit = { x, y }; }
+    exitIdx = START_IDX;
+    for (let y = 1; y < MAZE_H - 1; y++) {
+      for (let x = 1; x < MAZE_W - 1; x++) {
+        const i = y * MAZE_W + x;
+        if (fromStart[i] > best) { best = fromStart[i]; exitIdx = i; }
       }
     }
-    distToExit = bfsDistances(maze, exit);
+    exitY = (exitIdx / MAZE_W) | 0;
+    exitX = exitIdx - exitY * MAZE_W;
+    distToExit = bfsDistances(maze, exitIdx);
     maxDist = Math.max(1, best);
+
+    tempAt = new Int8Array(MAZE_N);
+    for (let i = 0; i < MAZE_N; i++) {
+      const d = distToExit[i];
+      tempAt[i] = d < 0 ? TEMP_UNKNOWN : tempBucket(d / maxDist);
+    }
 
     pills = generatePills(maze, distToExit, PILL_COUNT);
 
@@ -560,46 +692,52 @@ export function start(ctx) {
     pl.active = true;
     players.set(p.slot, pl);
   });
-  markPlayerOrderDirty();
+  playersDirty = true;
 
   const on = (t, type, fn) => t.addEventListener(type, fn, { signal });
 
   on(window, "player-join", (e) => {
-    const pl = makePlayer(e.detail.slot);
+    const slot = e.detail.slot;
+    const pl = makePlayer(slot);
     if (phase === "race") {
       pl.active = false;
-      ctx.send(e.detail.slot, { type: "hud", text: "Waiting for next round" });
+      ctx.send(slot, { type: "hud", text: "Waiting for next round" });
     } else if (phase === "ready") {
       pl.active = true;
       pl.ready = true;
     } else {
       pl.active = true;
     }
-    players.set(e.detail.slot, pl);
-    markPlayerOrderDirty();
+    // A re-used slot must not inherit the previous occupant's held input.
+    inputs.delete(slot);
+    dpad.delete(slot);
+    players.set(slot, pl);
+    playersDirty = true;
   });
 
   on(window, "player-leave", (e) => {
     players.delete(e.detail.slot);
     inputs.delete(e.detail.slot);
     dpad.delete(e.detail.slot);
-    markPlayerOrderDirty();
+    playersDirty = true;
   });
 
   on(window, "controller-input", (e) => {
     const { slot, data } = e.detail;
     if (!data) return;
+    const p = players.get(slot);
+    if (!p) return;
 
     if (data.type === "move") {
-      inputs.set(slot, { x: data.x, y: data.y });
+      let s = inputs.get(slot);
+      if (!s) { s = { x: 0, y: 0 }; inputs.set(slot, s); }
+      s.x = clampAxis(data.x);
+      s.y = clampAxis(data.y);
       return;
     }
 
     if (data.type === "button") {
-      if (phase === "ready" && data.pressed) {
-        const p = players.get(slot);
-        if (p) p.ready = true;
-      }
+      if (phase === "ready" && data.pressed) p.ready = true;
       const dirKey = BUTTON_DIR[data.id];
       if (dirKey) {
         let d = dpad.get(slot);
@@ -609,57 +747,56 @@ export function start(ctx) {
     }
   });
 
+  // Writes the wanted direction into inputX / inputY; returns false if none.
   function readInput(p) {
-    const stick = inputs.get(p.slot);
-    if (stick && Math.hypot(stick.x, stick.y) >= 0.4) return { x: stick.x, y: stick.y };
+    const s = inputs.get(p.slot);
+    if (s && s.x * s.x + s.y * s.y >= 0.16) { inputX = s.x; inputY = s.y; return true; }
     const d = dpad.get(p.slot);
     if (d) {
       const x = (d.right ? 1 : 0) - (d.left ? 1 : 0);
       const y = (d.down ? 1 : 0) - (d.up ? 1 : 0);
-      if (x !== 0 || y !== 0) return { x, y };
+      if (x !== 0 || y !== 0) { inputX = x; inputY = y; return true; }
     }
-    return null;
+    return false;
   }
 
   function tryMove(p) {
-    if (p.finished || p.dnf) return;
     if (elapsed < p.frozenUntil) return;
-    const input = readInput(p);
-    if (!input) return;
-    const { x, y } = input;
+    if (!readInput(p)) return;
 
-    const dir = Math.abs(x) >= Math.abs(y) ? (x > 0 ? "e" : "w") : (y > 0 ? "s" : "n");
+    const dir = Math.abs(inputX) >= Math.abs(inputY)
+      ? (inputX > 0 ? DIR_E : DIR_W)
+      : (inputY > 0 ? DIR_S : DIR_N);
     p.dir = dir;
-    const cell = maze.cells[p.cellY][p.cellX];
-    if (cell[dir]) return;
+    if (maze.walls[p.idx] & DIR_BIT[dir]) return;
 
     p.prevX = p.cellX; p.prevY = p.cellY;
-    p.cellX += dir === "e" ? 1 : dir === "w" ? -1 : 0;
-    p.cellY += dir === "s" ? 1 : dir === "n" ? -1 : 0;
+    p.cellX += DIR_DX[dir];
+    p.cellY += DIR_DY[dir];
+    p.idx += maze.step[dir];
     p.t = 0;
   }
 
+  // Only called for racing players (active, not finished, not DNF).
   function movePlayer(p, dt) {
     if (p.t < 1) { p.t = Math.min(1, p.t + dt * MOVE_SPEED); return; }
-    if (p.active) tryMove(p);
+    tryMove(p);
   }
 
   function checkPillPickup(p) {
-    if (!p.active || p.finished || p.dnf) return;
+    if (!isRacing(p)) return;
     if (elapsed < p.noPickupUntil) return;
     if (elapsed < p.frozenUntil) return;
-    const idx = pills.findIndex((pl) => pl.x === p.cellX && pl.y === p.cellY);
-    if (idx === -1) return;
+    let pi = -1;
+    for (let i = 0; i < pills.length; i++) if (pills[i].idx === p.idx) { pi = i; break; }
+    if (pi === -1) return;
 
-    pills.splice(idx, 1);
+    pills.splice(pi, 1);
     let anyFrozen = false;
 
-    for (const q of players.values()) {
-      if (q === p) continue;
-      if (!q.active || q.finished || q.dnf) continue;
-      const d = distToExit[q.cellY]?.[q.cellX] ?? -1;
-      if (d < 0) continue;
-      const secs = FREEZE[tempBucket(d / maxDist)] ?? 0;
+    for (const q of playerList) {
+      if (q === p || !isRacing(q)) continue;
+      const secs = FREEZE_SECS[tempAt[q.idx]];
       if (secs <= 0) continue;
       const base = Math.max(elapsed, q.frozenUntil);
       q.frozenUntil = base + secs;
@@ -677,27 +814,32 @@ export function start(ctx) {
     if (anyFrozen) shockwaveUntil = elapsed + 0.7;
   }
 
-  function hintFor(p) {
+  function countReady() {
+    let n = 0;
+    for (const p of playerList) if (p.ready) n++;
+    return n;
+  }
+
+  function hintFor(p, readyCount) {
     if (phase === "countdown") return "Get ready";
     if (phase === "ready") {
       if (p.finished) return `${ordinal(p.place)} place - press any button`;
       if (p.dnf)      return "DNF - press any button";
-      const readyCount = [...players.values()].filter((x) => x.ready).length;
       return `Press any button (${readyCount}/${players.size})`;
     }
     if (!p.active) return "Waiting for next round";
     if (p.finished) return `${ordinal(p.place)} place - ${p.finishTime.toFixed(2)}s`;
     if (p.dnf)      return "DNF";
     if (elapsed < p.frozenUntil) {
-      const remain = Math.max(0, p.frozenUntil - elapsed);
-      return `FROZEN ${remain.toFixed(1)}s`;
+      return `FROZEN ${Math.max(0, p.frozenUntil - elapsed).toFixed(1)}s`;
     }
     return "";
   }
 
   function updateHud(force) {
-    for (const p of players.values()) {
-      const text = hintFor(p);
+    const readyCount = phase === "ready" ? countReady() : 0;
+    for (const p of playerList) {
+      const text = hintFor(p, readyCount);
       if (force || p.lastHint !== text) {
         p.lastHint = text;
         ctx.send(p.slot, { type: "hud", text });
@@ -720,14 +862,12 @@ export function start(ctx) {
     }
 
     if (phase === "race") {
-      for (const p of players.values()) if (p.active && !p.finished && !p.dnf) movePlayer(p, dt);
+      for (const p of playerList) if (isRacing(p)) movePlayer(p, dt);
 
       if (elapsed >= nextCompassAt) {
-        for (const p of players.values()) {
-          if (!p.active || p.finished || p.dnf) continue;
-          const d = distToExit[p.cellY]?.[p.cellX] ?? -1;
-          if (d < 0) continue;
-          if (tempBucket(d / maxDist) === "FREEZING") {
+        for (const p of playerList) {
+          if (!isRacing(p)) continue;
+          if (tempAt[p.idx] === TEMP_FREEZING) {
             p.compassUntil = elapsed + COMPASS_DURATION;
             ctx.send(p.slot, { type: "vibrate", ms: 45 });
           }
@@ -735,33 +875,36 @@ export function start(ctx) {
         nextCompassAt += COMPASS_PERIOD;
       }
 
-      for (const p of players.values()) checkPillPickup(p);
+      for (const p of playerList) checkPillPickup(p);
 
-      for (const p of players.values()) {
-        if (!p.active || p.finished || p.dnf) continue;
-        if (p.cellX === exit.x && p.cellY === exit.y) {
-          p.finished = true;
-          p.place = finishers.length + 1;
-          p.finishTime = elapsed - raceStartElapsed;
-          finishers.push(p.slot);
-          if (raceEndElapsed === null) raceEndElapsed = elapsed + DNF_WAIT;
-          ctx.send(p.slot, { type: "vibrate", ms: [120, 60, 180] });
-        }
+      for (const p of playerList) {
+        if (!isRacing(p) || p.idx !== exitIdx) continue;
+        p.finished = true;
+        p.place = finishers.length + 1;
+        p.finishTime = elapsed - raceStartElapsed;
+        finishers.push(p.slot);
+        if (raceEndElapsed === null) raceEndElapsed = elapsed + DNF_WAIT;
+        ctx.send(p.slot, { type: "vibrate", ms: [120, 60, 180] });
       }
 
-      const activeList = [...players.values()].filter((p) => p.active);
-      const allDone = activeList.length > 0 && activeList.every((p) => p.finished);
+      let activeCount = 0, finishedCount = 0;
+      for (const p of playerList) {
+        if (!p.active) continue;
+        activeCount++;
+        if (p.finished) finishedCount++;
+      }
+      const allDone = activeCount > 0 && activeCount === finishedCount;
       const timeUp = raceEndElapsed !== null && elapsed >= raceEndElapsed;
 
       if (allDone || timeUp) {
-        for (const p of players.values()) {
+        for (const p of playerList) {
           if (p.active && !p.finished) {
             p.dnf = true;
             ctx.send(p.slot, { type: "vibrate", ms: [80, 60, 80] });
           }
         }
         phase = "ready";
-        for (const p of players.values()) p.ready = false;
+        for (const p of playerList) p.ready = false;
         updateHud(true);
         return;
       }
@@ -771,8 +914,8 @@ export function start(ctx) {
     }
 
     if (phase === "ready") {
-      let allReady = players.size > 0;
-      for (const p of players.values()) if (!p.ready) { allReady = false; break; }
+      let allReady = playerList.length > 0;
+      for (const p of playerList) if (!p.ready) { allReady = false; break; }
       if (allReady) { newRound(); updateHud(true); }
       else updateHud();
     }
@@ -800,24 +943,24 @@ export function start(ctx) {
     g.fillRect(vp.x, vp.y, vp.w, vp.h);
 
     const ratR = Math.min(vp.w, vp.h) * 0.13;
-    drawRat(g, cx, cy - vp.h * 0.30, ratR, "e", color);
+    drawRat(g, cx, cy - vp.h * 0.30, ratR, DIR_E, color);
 
     const cheeseSize = Math.min(vp.w, vp.h) * 0.055;
-    drawCheese(g, cx, cy + vp.h * 0.055, cheeseSize);
+    drawCheese(g, cx, cy + vp.h * 0.055, cheeseSize, cheeseGlowFor(cheeseSize * 2.4));
 
     const fs1 = Math.min(vp.w * 0.16, vp.h * 0.22);
     g.textAlign = "center"; g.textBaseline = "middle";
-    g.font = `800 ${fs1}px Fredoka, system-ui, sans-serif`;
+    g.font = `800 ${fs1}px ${FONT}`;
     g.fillStyle = INK;
     g.fillText(ordinal(p.place).toUpperCase(), cx, cy + vp.h * 0.14);
 
     const fs2 = Math.min(vp.w * 0.09, vp.h * 0.09);
-    g.font = `700 ${fs2}px Fredoka, system-ui, sans-serif`;
+    g.font = `700 ${fs2}px ${FONT}`;
     g.fillStyle = color;
     g.fillText(name, cx, cy + vp.h * 0.26);
 
     const fs3 = Math.min(vp.w * 0.055, vp.h * 0.055);
-    g.font = `600 ${fs3}px Fredoka, system-ui, sans-serif`;
+    g.font = `600 ${fs3}px ${FONT}`;
     g.fillStyle = MUTED;
     g.fillText(`${p.finishTime.toFixed(2)} s`, cx, cy + vp.h * 0.36);
 
@@ -841,17 +984,17 @@ export function start(ctx) {
 
     const fs1 = Math.min(vp.w * 0.22, vp.h * 0.28);
     g.textAlign = "center"; g.textBaseline = "middle";
-    g.font = `800 ${fs1}px Fredoka, system-ui, sans-serif`;
+    g.font = `800 ${fs1}px ${FONT}`;
     g.fillStyle = "#e5484d";
     g.fillText("DNF", cx, cy - vp.h * 0.06);
 
     const fs2 = Math.min(vp.w * 0.08, vp.h * 0.08);
-    g.font = `700 ${fs2}px Fredoka, system-ui, sans-serif`;
+    g.font = `700 ${fs2}px ${FONT}`;
     g.fillStyle = color;
     g.fillText(name, cx, cy + vp.h * 0.18);
 
     const fs3 = Math.min(vp.w * 0.045, vp.h * 0.045);
-    g.font = `600 ${fs3}px Fredoka, system-ui, sans-serif`;
+    g.font = `600 ${fs3}px ${FONT}`;
     g.fillStyle = MUTED;
     g.fillText("Did not finish", cx, cy + vp.h * 0.30);
 
@@ -874,125 +1017,141 @@ export function start(ctx) {
     const cellPx = Math.min(vp.w / 11, vp.h / 9);
     const px = lerp(p.prevX, p.cellX, p.t);
     const py = lerp(p.prevY, p.cellY, p.t);
-    const cellsAcross = vp.w / cellPx;
-    const cellsDown = vp.h / cellPx;
-    const wx0 = px - cellsAcross / 2;
-    const wy0 = py - cellsDown / 2;
-    const w2sX = (wx) => vp.x + (wx - wx0) * cellPx;
-    const w2sY = (wy) => vp.y + (wy - wy0) * cellPx;
+    // Screen position of the top-left corner of world cell (0,0): the
+    // camera keeps the rat centred in the viewport.
+    const originX = vp.x + vp.w / 2 - px * cellPx;
+    const originY = vp.y + vp.h / 2 - py * cellPx;
+    const half = cellPx / 2;
 
-    const visMap = getVisibility(p);
+    refreshVisibility(p);
+    const depthArr = p.visDepth, list = p.visList, count = p.visCount;
+    const walls = maze.walls;
     const wallW = Math.max(3, cellPx * 0.09);
+    const vx1 = vp.x + vp.w, vy1 = vp.y + vp.h;
 
-    // ---- Floors, walls and wall highlights in one pass ----
-    // A wall shared by two visible cells is only drawn by the cell that
-    // owns its "s" or "e" side, so no wall is drawn twice.
-    for (const [k, d] of visMap) {
-      const x = (k / 1000) | 0;
-      const y = k - x * 1000;
-      const cell = maze.cells[y][x];
-      const sx = w2sX(x), sy = w2sY(y);
-      if (sx + cellPx < vp.x || sx > vp.x + vp.w) continue;
-      if (sy + cellPx < vp.y || sy > vp.y + vp.h) continue;
-
-      const a = Math.max(0.35, 1 - (d / VIS_DEPTH) * 0.65);
-
-      // Floor
-      g.fillStyle = rgbaStr(FLOOR_RGB, a);
+    // ---- Pass 1: floors (+ which walls each on-screen cell must draw) ----
+    // A wall between two visible cells is drawn only by the cell owning its
+    // south / east side; north / west walls are drawn only when the
+    // neighbour on that side is hidden. Depths are non-decreasing in the
+    // BFS list, so fillStyle changes at most VIS_DEPTH times per pass.
+    let curD = -1;
+    for (let k = 0; k < count; k++) {
+      const idx = list[k];
+      const cy = (idx / MAZE_W) | 0;
+      const cx = idx - cy * MAZE_W;
+      const sx = originX + cx * cellPx, sy = originY + cy * cellPx;
+      if (sx + cellPx < vp.x || sx > vx1 || sy + cellPx < vp.y || sy > vy1) {
+        scratchMask[k] = 0;
+        continue;
+      }
+      const d = depthArr[idx];
+      if (d !== curD) { curD = d; g.fillStyle = FLOOR_STYLE[d]; }
       g.fillRect(sx, sy, cellPx, cellPx);
 
-      // Wall fill + top highlight
-      g.fillStyle = rgbaStr(WALL_RGB, a);
-      const wallHi = rgbaStr(WALL_HI_RGB, a * 0.7);
-      if (cell.n && !visMap.has(k - 1000)) {
-        g.fillRect(sx, sy, cellPx, wallW);
-        g.fillStyle = wallHi;
-        g.fillRect(sx, sy + wallW - 2, cellPx, 2);
-        g.fillStyle = rgbaStr(WALL_RGB, a);
-      }
-      if (cell.s) {
-        g.fillRect(sx, sy + cellPx - wallW, cellPx, wallW);
-        g.fillStyle = wallHi;
-        g.fillRect(sx, sy + cellPx - wallW, cellPx, 2);
-        g.fillStyle = rgbaStr(WALL_RGB, a);
-      }
-      if (cell.w && !visMap.has(k - 1)) {
-        g.fillRect(sx, sy, wallW, cellPx);
-        g.fillStyle = wallHi;
-        g.fillRect(sx + wallW - 2, sy, 2, cellPx);
-        g.fillStyle = rgbaStr(WALL_RGB, a);
-      }
-      if (cell.e) {
-        g.fillRect(sx + cellPx - wallW, sy, wallW, cellPx);
-        g.fillStyle = wallHi;
-        g.fillRect(sx + cellPx - wallW, sy, 2, cellPx);
-        g.fillStyle = rgbaStr(WALL_RGB, a);
-      }
+      const m = walls[idx];
+      let wm = 0;
+      if ((m & WALL_N) && depthArr[idx - MAZE_W] < 0) wm |= WALL_N;
+      if (m & WALL_S) wm |= WALL_S;
+      if ((m & WALL_W) && depthArr[idx - 1] < 0) wm |= WALL_W;
+      if (m & WALL_E) wm |= WALL_E;
+      scratchMask[k] = wm;
+      scratchSX[k] = sx;
+      scratchSY[k] = sy;
+    }
+
+    // ---- Pass 2: wall fills ----
+    curD = -1;
+    for (let k = 0; k < count; k++) {
+      const wm = scratchMask[k];
+      if (!wm) continue;
+      const d = depthArr[list[k]];
+      if (d !== curD) { curD = d; g.fillStyle = WALL_STYLE[d]; }
+      const sx = scratchSX[k], sy = scratchSY[k];
+      if (wm & WALL_N) g.fillRect(sx, sy, cellPx, wallW);
+      if (wm & WALL_S) g.fillRect(sx, sy + cellPx - wallW, cellPx, wallW);
+      if (wm & WALL_W) g.fillRect(sx, sy, wallW, cellPx);
+      if (wm & WALL_E) g.fillRect(sx + cellPx - wallW, sy, wallW, cellPx);
+    }
+
+    // ---- Pass 3: wall highlights ----
+    curD = -1;
+    for (let k = 0; k < count; k++) {
+      const wm = scratchMask[k];
+      if (!wm) continue;
+      const d = depthArr[list[k]];
+      if (d !== curD) { curD = d; g.fillStyle = HI_STYLE[d]; }
+      const sx = scratchSX[k], sy = scratchSY[k];
+      if (wm & WALL_N) g.fillRect(sx, sy + wallW - 2, cellPx, 2);
+      if (wm & WALL_S) g.fillRect(sx, sy + cellPx - wallW, cellPx, 2);
+      if (wm & WALL_W) g.fillRect(sx + wallW - 2, sy, 2, cellPx);
+      if (wm & WALL_E) g.fillRect(sx + cellPx - wallW, sy, 2, cellPx);
     }
 
     // ---- Pills ----
-    for (let i = 0; i < pills.length; i++) {
-      const pill = pills[i];
-      const d = visMap.get(pill.x * 1000 + pill.y);
-      if (d === undefined) continue;
-      const a = Math.max(0.5, 1 - (d / VIS_DEPTH) * 0.5);
-      g.globalAlpha = a;
-      drawPill(g, w2sX(pill.x) + cellPx / 2, w2sY(pill.y) + cellPx / 2, cellPx * 0.42);
+    if (pills.length) {
+      const pillSize = cellPx * 0.42;
+      const glow = pillGlowFor(pillSize * 1.8);
+      for (let i = 0; i < pills.length; i++) {
+        const pill = pills[i];
+        const d = depthArr[pill.idx];
+        if (d < 0) continue;
+        g.globalAlpha = Math.max(0.5, 1 - (d / VIS_DEPTH) * 0.5);
+        drawPill(g, originX + pill.x * cellPx + half, originY + pill.y * cellPx + half, pillSize, glow);
+      }
       g.globalAlpha = 1;
     }
 
     // ---- Cheese ----
-    const exitD = visMap.get(exit.x * 1000 + exit.y);
-    if (exitD !== undefined) {
-      const a = Math.max(0.55, 1 - (exitD / VIS_DEPTH) * 0.5);
-      g.globalAlpha = a;
-      drawCheese(g, w2sX(exit.x) + cellPx / 2, w2sY(exit.y) + cellPx / 2, cellPx * 0.34);
+    const exitD = depthArr[exitIdx];
+    if (exitD >= 0) {
+      const cheeseSize = cellPx * 0.34;
+      g.globalAlpha = Math.max(0.55, 1 - (exitD / VIS_DEPTH) * 0.5);
+      drawCheese(g, originX + exitX * cellPx + half, originY + exitY * cellPx + half,
+                 cheeseSize, cheeseGlowFor(cheeseSize * 2.4));
       g.globalAlpha = 1;
     }
 
-    // ---- Other rats ----
-    for (const op of players.values()) {
-      if (op.slot === p.slot || op.finished || op.dnf) continue;
-      if (!visMap.has(op.cellX * 1000 + op.cellY)) continue;
+    // ---- Other rats (racing players only) ----
+    for (const op of playerList) {
+      if (op === p || !isRacing(op)) continue;
+      if (depthArr[op.idx] < 0) continue;
       const ox = lerp(op.prevX, op.cellX, op.t);
       const oy = lerp(op.prevY, op.cellY, op.t);
-      const oxp = w2sX(ox) + cellPx / 2;
-      const oyp = w2sY(oy) + cellPx / 2;
+      const oxp = originX + ox * cellPx + half;
+      const oyp = originY + oy * cellPx + half;
       const orr = cellPx * 0.30;
 
       drawRat(g, oxp, oyp, orr, op.dir, OTHER_RAT_COLOR);
       if (elapsed < op.frozenUntil) {
         g.strokeStyle = "rgba(159,209,255,0.95)";
         g.lineWidth = 3;
-        g.beginPath(); g.arc(oxp, oyp, orr * 1.7, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.arc(oxp, oyp, orr * 1.7, 0, TAU); g.stroke();
       }
     }
 
     // ---- Own rat ----
-    const ownDist = distToExit[p.cellY]?.[p.cellX] ?? -1;
-    const ownTempRGB = ownDist >= 0 ? tempRGB(ownDist / maxDist) : [136, 136, 136];
-    const ownColor = rgbStr(ownTempRGB);
+    const bucket = tempAt[p.idx];
     const ownFrozen = elapsed < p.frozenUntil;
 
     {
-      const bxs = w2sX(px) + cellPx / 2;
-      const bys = w2sY(py) + cellPx / 2;
+      const bxs = vp.x + vp.w / 2 + half;   // == originX + px * cellPx + half
+      const bys = vp.y + vp.h / 2 + half;
       const br = cellPx * 0.32;
+      const glowR = br * 2.4;
 
-      const glow = g.createRadialGradient(bxs, bys, 0, bxs, bys, br * 2.4);
-      glow.addColorStop(0, rgbaStr(ownTempRGB, ownFrozen ? 0.25 : 0.55));
-      glow.addColorStop(1, rgbaStr(ownTempRGB, 0));
-      g.fillStyle = glow;
-      g.beginPath(); g.arc(bxs, bys, br * 2.4, 0, Math.PI * 2); g.fill();
+      g.setTransform(1, 0, 0, 1, bxs, bys);
+      g.fillStyle = ownGlowFor[bucket][ownFrozen ? 1 : 0](glowR);
+      g.beginPath(); g.arc(0, 0, glowR, 0, TAU); g.fill();
+      g.setTransform(1, 0, 0, 1, 0, 0);
 
       if (elapsed < p.pickupFlash) {
         const life = (p.pickupFlash - elapsed) / 0.6;
         g.strokeStyle = `rgba(229,72,77,${life})`;
         g.lineWidth = 4;
-        g.beginPath(); g.arc(bxs, bys, br + (1 - life) * br * 2.5, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.arc(bxs, bys, br + (1 - life) * br * 2.5, 0, TAU); g.stroke();
       }
 
-      drawRat(g, bxs, bys, br, p.dir, ownColor);
+      drawRat(g, bxs, bys, br, p.dir, TEMP_COLOR[bucket]);
 
       if (ownFrozen) {
         const remain = p.frozenUntil - elapsed;
@@ -1000,49 +1159,42 @@ export function start(ctx) {
         g.save();
         g.globalAlpha = 0.55;
         g.fillStyle = "#bfe3ff";
-        g.beginPath(); g.arc(bxs, bys, br * 1.25, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(bxs, bys, br * 1.25, 0, TAU); g.fill();
         g.globalAlpha = 1;
         g.strokeStyle = "rgba(159,209,255,0.95)";
         g.lineWidth = 4;
-        g.beginPath(); g.arc(bxs, bys, br * 1.9 * wob, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.arc(bxs, bys, br * 1.9 * wob, 0, TAU); g.stroke();
 
-        g.font = `800 ${Math.max(12, br * 0.75)}px Fredoka, system-ui, sans-serif`;
+        g.font = `800 ${Math.max(12, br * 0.75)}px ${FONT}`;
         g.textAlign = "center";
         g.textBaseline = "middle";
+        const label = remain.toFixed(1);
         g.fillStyle = CARD;
-        g.fillText(remain.toFixed(1), bxs, bys + 0.5);
+        g.fillText(label, bxs, bys + 0.5);
         g.fillStyle = INK;
-        g.fillText(remain.toFixed(1), bxs, bys);
+        g.fillText(label, bxs, bys);
         g.restore();
       }
     }
 
+    const vcx = vp.x + vp.w / 2, vcy = vp.y + vp.h / 2;
+
     // ---- Shockwave pulse ----
     if (elapsed < shockwaveUntil) {
       const life = (shockwaveUntil - elapsed) / 0.7;
-      const pulse = Math.min(1, life * 1.4);
-      const vcx0 = vp.x + vp.w / 2, vcy0 = vp.y + vp.h / 2;
-      const sg = g.createRadialGradient(
-        vcx0, vcy0, Math.min(vp.w, vp.h) * 0.15,
-        vcx0, vcy0, Math.max(vp.w, vp.h) * 0.75,
-      );
-      sg.addColorStop(0,   "rgba(159,209,255,0)");
-      sg.addColorStop(0.6, `rgba(159,209,255,${0.20 * pulse})`);
-      sg.addColorStop(1,   `rgba(159,209,255,${0.55 * pulse})`);
-      g.fillStyle = sg;
-      g.fillRect(vp.x, vp.y, vp.w, vp.h);
+      g.globalAlpha = Math.min(1, life * 1.4);
+      g.setTransform(1, 0, 0, 1, vcx, vcy);
+      g.fillStyle = shockFor(vp.w, vp.h);
+      g.fillRect(-vp.w / 2, -vp.h / 2, vp.w, vp.h);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
     }
 
     // ---- Vignette ----
-    const vcx = vp.x + vp.w / 2, vcy = vp.y + vp.h / 2;
-    const vg = g.createRadialGradient(
-      vcx, vcy, Math.min(vp.w, vp.h) * 0.25,
-      vcx, vcy, Math.max(vp.w, vp.h) * 0.7,
-    );
-    vg.addColorStop(0, "rgba(8,12,26,0)");
-    vg.addColorStop(1, "rgba(8,12,26,0.55)");
-    g.fillStyle = vg;
-    g.fillRect(vp.x, vp.y, vp.w, vp.h);
+    g.setTransform(1, 0, 0, 1, vcx, vcy);
+    g.fillStyle = vignetteFor(vp.w, vp.h);
+    g.fillRect(-vp.w / 2, -vp.h / 2, vp.w, vp.h);
+    g.setTransform(1, 0, 0, 1, 0, 0);
 
     // Frame
     g.strokeStyle = CARD_EDGE;
@@ -1053,31 +1205,25 @@ export function start(ctx) {
     const info = ctx.player(p.slot);
     if (info) {
       const fs = Math.max(13, vp.h * 0.032);
-      g.font = `700 ${fs}px Fredoka, system-ui, sans-serif`;
+      g.font = `700 ${fs}px ${FONT}`;
       g.textAlign = "left"; g.textBaseline = "top";
       const tw = g.measureText(info.name).width + 20;
       const lx = vp.x + 10, ly = vp.y + 8;
-      const lh = fs + 10, rad = lh / 2;
+      const lh = fs + 10;
       g.fillStyle = "rgba(8,12,26,0.7)";
-      g.beginPath();
-      g.moveTo(lx + rad, ly);
-      g.arcTo(lx + tw, ly, lx + tw, ly + lh, rad);
-      g.arcTo(lx + tw, ly + lh, lx, ly + lh, rad);
-      g.arcTo(lx, ly + lh, lx, ly, rad);
-      g.arcTo(lx, ly, lx + tw, ly, rad);
+      roundRectPath(g, lx, ly, tw, lh, lh / 2);
       g.fill();
       g.fillStyle = info.color;
       g.fillText(info.name, lx + 10, ly + 5);
     }
 
     // Compass
-    if (phase === "race" && p.active && !p.finished && !p.dnf && elapsed < p.compassUntil) {
-      const dir = exitDirection(maze, distToExit, p.cellX, p.cellY);
-      if (dir) {
+    if (phase === "race" && isRacing(p) && elapsed < p.compassUntil) {
+      const dir = exitDirection(maze, distToExit, p.idx);
+      if (dir >= 0) {
         const size = Math.min(vp.w, vp.h) * 0.13;
         const cx2 = vp.x + vp.w - size - 18;
         const cy2 = vp.y + size + 18;
-        const ang = ({ n: -Math.PI / 2, e: 0, s: Math.PI / 2, w: Math.PI })[dir];
         const life = p.compassUntil - elapsed;
         const pulse = 1 + Math.sin((1 - life) * Math.PI * 3) * 0.06;
 
@@ -1085,11 +1231,11 @@ export function start(ctx) {
         g.translate(cx2, cy2);
         g.scale(pulse, pulse);
         g.fillStyle = "rgba(8,12,26,0.88)";
-        g.beginPath(); g.arc(0, 0, size, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(0, 0, size, 0, TAU); g.fill();
         g.strokeStyle = "rgba(255,220,120,0.95)";
         g.lineWidth = 3;
-        g.beginPath(); g.arc(0, 0, size, 0, Math.PI * 2); g.stroke();
-        g.rotate(ang);
+        g.beginPath(); g.arc(0, 0, size, 0, TAU); g.stroke();
+        g.rotate(DIR_ANGLE[dir]);
         g.fillStyle = "#ffc850";
         g.beginPath();
         g.moveTo(size * 0.55, 0);
@@ -1106,7 +1252,7 @@ export function start(ctx) {
       g.fillStyle = "rgba(8,12,26,0.75)";
       g.fillRect(vp.x, vp.y, vp.w, vp.h);
       g.fillStyle = INK;
-      g.font = `700 ${Math.max(14, vp.h * 0.05)}px Fredoka, system-ui, sans-serif`;
+      g.font = `700 ${Math.max(14, vp.h * 0.05)}px ${FONT}`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText("Waiting for next round", vp.x + vp.w / 2, vp.y + vp.h / 2);
     }
@@ -1120,7 +1266,7 @@ export function start(ctx) {
       g.fillStyle = "rgba(30,34,70,0.78)";
       g.fillRect(0, 0, VIEW_W, VIEW_H);
       g.textAlign = "center"; g.textBaseline = "middle";
-      g.font = "800 200px Fredoka, system-ui, sans-serif";
+      g.font = `800 200px ${FONT}`;
       g.fillStyle = INK;
       const n = Math.ceil(countdown);
       g.fillText(n > 0 ? String(n) : "GO", VIEW_W / 2, VIEW_H / 2);
@@ -1131,20 +1277,14 @@ export function start(ctx) {
       const remaining = Math.max(0, raceEndElapsed - elapsed);
       const bw = 360, bh = 54;
       const bx = (VIEW_W - bw) / 2, by = 14;
-      const rad = bh / 2;
       g.fillStyle = "rgba(26,30,61,0.92)";
-      g.beginPath();
-      g.moveTo(bx + rad, by);
-      g.arcTo(bx + bw, by, bx + bw, by + bh, rad);
-      g.arcTo(bx + bw, by + bh, bx, by + bh, rad);
-      g.arcTo(bx, by + bh, bx, by, rad);
-      g.arcTo(bx, by, bx + bw, by, rad);
+      roundRectPath(g, bx, by, bw, bh, bh / 2);
       g.fill();
       g.strokeStyle = CARD_EDGE;
       g.lineWidth = 2; g.stroke();
 
       g.fillStyle = INK;
-      g.font = "700 24px Fredoka, system-ui, sans-serif";
+      g.font = `700 24px ${FONT}`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText(`Race ends in ${Math.ceil(remaining)}s`, VIEW_W / 2, by + bh / 2);
       return;
@@ -1157,28 +1297,27 @@ export function start(ctx) {
 
       if (finishers.length > 0) {
         const info = ctx.player(finishers[0]);
-        g.font = "800 100px Fredoka, system-ui, sans-serif";
+        g.font = `800 100px ${FONT}`;
         g.fillStyle = info ? info.color : INK;
         g.fillText(`${info ? info.name : "Player"} wins!`, VIEW_W / 2, VIEW_H / 2 - 60);
       } else {
-        g.font = "800 90px Fredoka, system-ui, sans-serif";
+        g.font = `800 90px ${FONT}`;
         g.fillStyle = INK;
         g.fillText("Round over", VIEW_W / 2, VIEW_H / 2 - 60);
       }
 
-      const readyCount = [...players.values()].filter((p) => p.ready).length;
-      g.font = "600 30px Fredoka, system-ui, sans-serif";
+      g.font = `600 30px ${FONT}`;
       g.fillStyle = MUTED;
-      g.fillText(`Press any button to continue (${readyCount}/${players.size})`,
+      g.fillText(`Press any button to continue (${countReady()}/${players.size})`,
                  VIEW_W / 2, VIEW_H / 2 + 40);
 
       const gap = 44, dotR = 12;
-      const totalW = Math.max(0, players.size - 1) * gap;
+      const totalW = Math.max(0, playerList.length - 1) * gap;
       let x = VIEW_W / 2 - totalW / 2;
-      for (const p of players.values()) {
+      for (const p of playerList) {
         const info = ctx.player(p.slot);
         g.fillStyle = p.ready ? (info ? info.color : MUTED) : "rgba(90,97,136,0.35)";
-        g.beginPath(); g.arc(x, VIEW_H / 2 + 110, dotR, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, VIEW_H / 2 + 110, dotR, 0, TAU); g.fill();
         x += gap;
       }
     }
@@ -1188,27 +1327,32 @@ export function start(ctx) {
     g.fillStyle = BG;
     g.fillRect(0, 0, VIEW_W, VIEW_H);
 
-    const list = getOrderedPlayers();
-    const n = Math.max(1, list.length);
-    const [rows, cols] = getLayout(n);
+    const n = playerOrder.length;
+    const layout = LAYOUTS[Math.min(6, Math.max(1, n))];
+    const rows = layout[0], cols = layout[1];
     const cellW = VIEW_W / cols;
     const cellH = VIEW_H / rows;
+    const shown = Math.min(n, rows * cols);
 
-    for (let i = 0; i < list.length; i++) {
-      const p = list[i];
+    vp.w = cellW; vp.h = cellH;
+    for (let i = 0; i < shown; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      renderViewport({ x: col * cellW, y: row * cellH, w: cellW, h: cellH }, p);
+      vp.x = col * cellW;
+      vp.y = row * cellH;
+      renderViewport(vp, playerOrder[i]);
     }
 
     renderOverlay();
   }
 
   function frame(now) {
+    if (exiting) return;
     let dt = (now - last) / 1000;
     if (dt > 0.05) dt = 0.05;
     if (dt < 0) dt = 0;
     last = now;
+    refreshPlayerLists();
     update(dt);
     render();
     raf = requestAnimationFrame(frame);
@@ -1220,6 +1364,14 @@ export function start(ctx) {
       exiting = true;
       cancelAnimationFrame(raf);
       raf = 0;
+      players.clear();
+      inputs.clear();
+      dpad.clear();
+      // Give the root back the way we found it.
+      for (const [k, v, prio] of savedRootStyle) {
+        if (v) root.style.setProperty(k, v, prio);
+        else root.style.removeProperty(k);
+      }
     },
   };
 }
